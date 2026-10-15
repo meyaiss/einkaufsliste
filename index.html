@@ -240,6 +240,18 @@ details.adv summary{cursor:pointer;color:var(--muted);font-weight:700;font-size:
 .legal p{margin:0}
 .legal a{color:var(--aisle)}
 .legal .ph{background:color-mix(in srgb,var(--tag) 40%,transparent);padding:0 4px;border-radius:4px}
+.syncbar{display:flex;align-items:center;gap:8px;width:100%;border:0;border-radius:999px;background:color-mix(in srgb,var(--aisle) 12%,transparent);color:var(--fg);font:inherit;font-size:calc(14px*var(--fs));padding:6px 10px 6px 12px;text-align:left;cursor:pointer;min-width:0}
+.syncbar[hidden]{display:none}
+.syncbar #syncTxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.syncbar svg{flex:0 0 auto;width:16px;height:16px;fill:none;stroke:var(--muted);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.syncbar .dot,.memb .dot{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#2E9E5B}
+.syncbar .dot.off{background:var(--muted)}
+.iby{display:block;font-size:calc(12px*var(--fs));color:var(--muted);margin-top:1px}
+.memb{display:flex;align-items:center;gap:10px;padding:10px 14px}
+.memb + .memb{border-top:1px solid var(--line)}
+.memb b{flex:1;min-width:0}
+.memb small{color:var(--muted)}
+.memb .dot.old{background:var(--line)}
 .introbar{display:grid;gap:8px;padding:12px;border-radius:var(--r);background:color-mix(in srgb,var(--tag) 22%,var(--bg));font-size:calc(15px*var(--fs))}
 .introbar .row{align-items:center}
 .introbar .btn{flex:0 0 auto;padding:8px 14px}
@@ -437,6 +449,10 @@ details.alt[open]{display:grid;gap:10px}
 body.shopmode .shopbar{display:flex}
 body.shopmode .add, body.shopmode #sugg, body.shopmode #hint, body.shopmode #freqWrap, body.shopmode .cart ul.items, body.shopmode .cart-head button{display:none!important}
 body.shopmode .rowin{min-height:60px}
+ul.items.flat{margin-top:14px}
+.route li.pin{background:color-mix(in srgb,var(--tag) 22%,var(--bg))}
+.route li.pin .nm small{display:block;font-size:calc(12px*var(--fs));color:var(--muted);font-weight:400}
+.route li.pin.flash{outline:3px solid var(--tag)}
 body.shopmode .cart{margin-top:18px}
 </style>
 </head>
@@ -458,6 +474,7 @@ body.shopmode .cart{margin-top:18px}
       <div class="progress"><span id="progText">0 von 0</span><div class="bar"><i id="progBar"></i></div></div>
     </div>
     <div class="shopbar" id="shopBar" role="status"><span>Einkaufsmodus</span><button type="button" id="shopEnd">Beenden</button></div>
+    <button class="syncbar" id="syncBar" type="button" hidden><span class="dot" id="syncDot"></span><span id="syncTxt"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
     <div class="sumline" id="sumLine" hidden></div>
     <div class="updbar" id="updBar" role="status" hidden>
       <span>Eine neue Version ist da.</span>
@@ -1293,8 +1310,82 @@ function openStorePicker(opt){
 /* Laufweg aus der Abhak-Reihenfolge lernen:
    Die Gänge, in denen heute etwas abgehakt wurde, bekommen die Reihenfolge,
    in der du sie tatsächlich besucht hast. Alle anderen Gänge bleiben an ihrem Platz. */
+/* ---------- Einzelne Artikel im Laufweg ----------
+   Grundlage sind die Bereiche (Kategorien): Bereich Nr. k belegt die Plätze k bis k+1, seine Artikel stehen bei k+0,5.
+   Einzelne Artikel können je Markt einen eigenen Platz bekommen (z. B. Eier gleich nach Obst, obwohl Milch ganz hinten steht). */
+let itemPos = lsGet("itempos", {});                      // {marktId: {artikelname: platz}}
+function posMap(st){ return (st && itemPos[st.id]) || {}; }
+function savePos(st, map){ if (Object.keys(map).length) itemPos[st.id] = map; else delete itemPos[st.id]; lsSet("itempos", itemPos); }
+function effPos(i, st){
+  const p = posMap(st)[i.name.toLowerCase()];
+  if (typeof p === "number") return p;
+  const k = st.order.indexOf(catIn(i, st));
+  return (k < 0 ? st.order.length : k) + 0.5;
+}
+function sortForStore(list, st){ return list.map(i=>[effPos(i, st), i]).sort((a, b)=>a[0] - b[0] || (a[1].t || 0) - (b[1].t || 0)).map(x=>x[1]); }
+/* Liste in Laufweg-Reihenfolge; eine Überschrift, sobald der Bereich wechselt. Im Einkaufsmodus ohne Überschriften. */
+function sectionsHtml(items, st){
+  const sorted = sortForStore(items, st);
+  if (shopOn) return sorted.length ? `<ul class="items flat">${sorted.map(i=>rowHtml(i, catIn(i, st))).join("")}</ul>` : "";
+  let html = "", run = [], rc = null;
+  const flush = ()=>{ if (run.length) html += `<section class="aisle"><div class="sign"><div class="name">${esc(CATS[rc].l)}</div><div class="count">${run.length}</div></div><ul class="items">${run.map(i=>rowHtml(i, rc)).join("")}</ul></section>`; run = []; };
+  for (const i of sorted){ const c = catIn(i, st); if (c !== rc){ flush(); rc = c; } run.push(i); }
+  flush();
+  return html;
+}
+/* Heutiger Weg: abgehakte Artikel in der Reihenfolge der Häkchen */
+function tripWalk(){ return Object.values(state.items).filter(i=>i.done && i.dt > 0).sort((a, b)=>a.dt - b.dt); }
+/* Artikel, die heute nicht zum gespeicherten Weg passten (alles außer der längsten passenden Folge) */
+function tripOutliers(st){
+  const w = tripWalk(); if (w.length < 3) return [];
+  const e = w.map(i=>effPos(i, st)), n = e.length, prev = Array(n).fill(-1);
+  // Gewichtet: Ein Artikel, dessen Bereich heute nur einmal vorkam, ist eher am richtigen Platz als einer, der seinen Bereich „zerteilt“
+  const cats = w.map(i=>catIn(i, st)), cnt = {}; cats.forEach(c=>{ cnt[c] = (cnt[c] || 0) + 1; });
+  const wt = cats.map(c=>1 + (cnt[c] === 1 ? 0.01 : 0)), len = wt.slice();
+  for (let i = 0; i < n; i++) for (let j = 0; j < i; j++) if (e[j] <= e[i] && len[j] + wt[i] > len[i] + 1e-9){ len[i] = len[j] + wt[i]; prev[i] = j; }
+  let best = 0; for (let i = 1; i < n; i++) if (len[i] > len[best]) best = i;
+  const keep = new Set(); for (let i = best; i >= 0; i = prev[i]) keep.add(i);
+  return w.filter((_, i)=>!keep.has(i));
+}
+/* Ausgewählte Artikel bekommen ihren Platz zwischen den Nachbarn, zwischen denen sie heute lagen */
+function applyTripPositions(st, walk, sel){
+  const map = Object.assign({}, posMap(st)), e = walk.map(i=>effPos(i, st));
+  let count = 0;
+  for (let i = 0; i < walk.length; ){
+    if (!sel[i]){ i++; continue; }
+    let j = i; while (j < walk.length && sel[j]) j++;
+    let a = i > 0 ? e[i - 1] : null, b = j < walk.length ? e[j] : null;
+    if (a == null && b == null){ i = j; continue; }
+    if (a == null) a = b - 1;
+    if (b == null) b = a + 1;
+    if (b <= a) b = a + 0.2;
+    for (let x = 0; x < j - i; x++){ map[walk[i + x].name.toLowerCase()] = a + (b - a) * (x + 1) / (j - i + 1); count++; }
+    i = j;
+  }
+  savePos(st, map);
+  return count;
+}
+function openTripAdjust(){
+  const st = currentStore(), walk = tripWalk();
+  const out = new Set(tripOutliers(st).map(i=>i.name.toLowerCase()));
+  const sel = walk.map(i=>out.has(i.name.toLowerCase()));
+  openSheet(`<h3>Einzelne Artikel einsortieren</h3>
+    <p class="note">So bist du heute gelaufen, von oben nach unten. Markiere die Artikel, die in deinem Markt woanders stehen als ihr Bereich – sie bekommen einen eigenen Platz. Die Bereiche bleiben, wie sie sind.</p>
+    <div class="imprev"><ul id="taList">${walk.map((i, ix)=>`<li class="mrow"><label class="mcheck"><input type="checkbox" data-tix="${ix}" ${sel[ix] ? "checked" : ""}>
+      <span><span class="mname" translate="no">${esc(i.name)}</span><small>${esc(CATS[catIn(i, st)].l)}${out.has(i.name.toLowerCase()) ? " · <b>heute woanders</b>" : ""}</small></span></label></li>`).join("")}</ul></div>
+    <button class="btn" type="button" id="taSave">Plätze speichern</button>
+    <button class="btn ghost" type="button" data-close>Abbrechen</button>`);
+  $("taList").addEventListener("change", e=>{ const cb = e.target.closest("[data-tix]"); if (cb) sel[+cb.dataset.tix] = cb.checked; });
+  $("taSave").onclick = ()=>{
+    const n = applyTripPositions(st, walk, sel);
+    lsSet("learnNo", {store: st.id, trip: tripKey()});
+    closeSheet(); render();
+    toast(n ? `${n} Artikel einzeln einsortiert.` : "Nichts geändert.");
+  };
+}
 function learnedOrder(st){
-  const done = Object.values(state.items).filter(i=>i.done && i.dt>0).sort((a,b)=>a.dt-b.dt);
+  const pins = posMap(st);
+  const done = Object.values(state.items).filter(i=>i.done && i.dt>0 && typeof pins[i.name.toLowerCase()] !== "number").sort((a,b)=>a.dt-b.dt);   // Artikel mit eigenem Platz zählen hier nicht
   const seen = [];
   for (const i of done){ const c = catIn(i, st); if (!seen.includes(c)) seen.push(c); }
   if (seen.length < 2) return null;
@@ -1358,10 +1449,7 @@ function render(){
     for (const sh of shops){
       const its = by.get(sh.id); if (!its.length) continue;
       html += `<section class="shop"><div class="shophead"><span><span translate="no">${esc(sh.name)}</span></span><small>${its.length}</small></div>`;
-      for (const c of sh.order){
-        const g = its.filter(i=>catIn(i, sh)===c).sort((a,b)=>(a.t||0)-(b.t||0));
-        if (g.length) html += `<section class="aisle"><div class="sign"><div class="name">${esc(CATS[c].l)}</div><div class="count">${g.length}</div></div><ul class="items">${g.map(i=>rowHtml(i, c)).join("")}</ul></section>`;
-      }
+      html += sectionsHtml(its, sh);
       html += `</section>`;
     }
     if (!open.length) html += `<div class="allgood"><span>Alles erledigt!</span></div>`;
@@ -1378,16 +1466,14 @@ function render(){
       html += `<section class="cart"><div class="cart-head"><h2>Erledigt · ${done.length}</h2><button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
     }
   } else {
-    let n = 0;
-    for (const c of st.order){
-      const g = open.filter(i=>catIn(i, st)===c).sort((a,b)=>(a.t||0)-(b.t||0));
-      n++;
-      if (!g.length) continue;
-      html += `<section class="aisle"><div class="sign"><div class="name">${esc(CATS[c].l)}</div><div class="count">${g.length}</div></div><ul class="items">${g.map(i=>rowHtml(i, c)).join("")}</ul></section>`;
-    }
+    html += sectionsHtml(open, st);
     if (!open.length){
-      const lo = learnedOrder(st) && !learnDeclined(st) ? true : false;
-      html += `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span>${lo ? `<p>Du bist heute anders gelaufen als gespeichert. Soll <span translate="no">${esc(st.name)}</span> sich diese Reihenfolge merken?</p><div class="learnrow"><button class="btn tag" type="button" data-act="learn">Übernehmen</button><button class="btn learnno" type="button" data-act="learnno">Nein, danke</button></div>` : ""}</div>`;
+      const declined = learnDeclined(st);
+      const lo = !declined && learnedOrder(st), outl = declined ? [] : tripOutliers(st);
+      html += `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span>${lo
+        ? `<p>Du bist heute anders gelaufen als gespeichert. Soll <span translate="no">${esc(st.name)}</span> sich diese Reihenfolge merken?</p>`
+        : outl.length ? `<p>Einige Artikel standen heute woanders als ihr Bereich. Willst du ihnen einen eigenen Platz geben?</p>` : ""}${lo || outl.length
+        ? `<div class="learnrow">${lo ? `<button class="btn tag" type="button" data-act="learn">Ganze Reihenfolge übernehmen</button>` : ""}<button class="btn ${lo ? "learnno" : "tag"}" type="button" data-act="learnitems">Einzelne Artikel anpassen</button><button class="btn learnno" type="button" data-act="learnno">Nein, danke</button></div>` : ""}</div>`;
     }
     if (done.length){
       done.sort((a,b)=>(b.dt||0)-(a.dt||0));
@@ -1442,7 +1528,7 @@ function rowHtml(i, cat){
   const icon = showIcons ? `<span class="iico" aria-hidden="true">${itemIcon(i, cat)}</span>` : "";
   return `<li class="${i.done?"done":""}${justToggled===i.id?" pop":""}" data-id="${esc(i.id)}">
     <div class="sw-bg" aria-hidden="true"><span class="sw-l">${CHECK}${i.done ? "Zurück" : "Abhaken"}</span><span class="sw-r">Löschen<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 0 0 8.5 21h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4h6v3"/></svg></span></div>
-    <div class="rowin"><button class="tick" type="button" data-act="toggle" aria-pressed="${i.done?"true":"false"}"><span class="box">${CHECK}</span>${icon}<span class="label" translate="no"><span translate="no">${esc(i.name)}</span>${i.note?`<small class="inote">${esc(i.note)}</small>`:""}</span>${i.qty?`<span class="qty">${esc(i.qty)}</span>`:""}${lt?`<span class="price">${fmtEUR(lt)}</span>`:""}</button><button class="more" type="button" data-act="edit" aria-label="${esc(i.name)} bearbeiten">⋯</button></div>
+    <div class="rowin"><button class="tick" type="button" data-act="toggle" aria-pressed="${i.done?"true":"false"}"><span class="box">${CHECK}</span>${icon}<span class="label" translate="no"><span translate="no">${esc(i.name)}</span>${i.by && curList().share && i.by !== myName() ? `<small class="iby">${esc(i.by)}</small>` : ""}${i.note?`<small class="inote">${esc(i.note)}</small>`:""}</span>${i.qty?`<span class="qty">${esc(i.qty)}</span>`:""}${lt?`<span class="price">${fmtEUR(lt)}</span>`:""}</button><button class="more" type="button" data-act="edit" aria-label="${esc(i.name)} bearbeiten">⋯</button></div>
   </li>`;
 }
 
@@ -1567,6 +1653,7 @@ function addEntry(p, t, learn){
   const cat = p.cat && CATS[p.cat] && (p.cat === "sonst" || CATS[p.cat].t === currentType()) ? p.cat : guessCat(p.name);
   const item = {name:p.name, qty:p.qty || "", cat, done:false, t};
   if (p.note) item.note = p.note;
+  if (curList().share && myName()) item.by = myName().slice(0, 30);   // gemeinsame Liste: die anderen sehen, von wem es ist
   const price = typeof p.price === "number" ? p.price : (typeof known.price === "number" ? known.price : null);  // gemerkter Preis
   if (price != null) item.price = price;
   api.setItem(newId(), item);
@@ -1642,9 +1729,10 @@ $("list").addEventListener("click", e=>{
   const act = b.dataset.act;
   if (act==="learn"){
     const st = currentStore(); const lo = learnedOrder(st);
-    if (lo){ saveOrder(st, lo); toast(`Reihenfolge für ${st.name} gespeichert.`); }
+    if (lo){ saveOrder(st, lo); lsSet("learnNo", {store: st.id, trip: tripKey()}); toast(`Reihenfolge für ${st.name} gespeichert.`); }
     return;
   }
+  if (act==="learnitems"){ openTripAdjust(); return; }
   if (act==="learnno"){                                 // nur für diesen Einkauf nicht mehr fragen
     const st = currentStore(); lsSet("learnNo", {store: st.id, trip: tripKey()}); render();
     toast("Okay, die gespeicherte Reihenfolge bleibt."); return;
@@ -1993,6 +2081,7 @@ function applyShopBtn(){ $("shopBtn").classList.toggle("show", shopCfg); }
 async function setShopMode(on){
   shopOn = on; lsSet("shopmode", on);
   document.body.classList.toggle("shopmode", on);
+  render();
   $("shopBtn").setAttribute("aria-pressed", on ? "true" : "false");
   if (on && !wantWake && "wakeLock" in navigator){ if (await reqWake()){ wantWake = true; shopWake = true; } }
   if (!on && shopWake){ shopWake = false; wantWake = false; if (wake) try{ await wake.release(); }catch(_){} }
@@ -2282,9 +2371,11 @@ function openEdit(id){
     <div class="field"><label for="eNote">Notiz (optional)</label><input id="eNote" type="text" value="${esc(it.note||"")}" placeholder="z. B. Bio, die rote Packung, nur wenn im Angebot"></div>
     ${multi && shops.length > 1 ? `<div class="field"><label for="eShop">Laden</label><select id="eShop">${shops.map(x=>`<option value="${esc(x.id)}"${x.id === st.id ? " selected" : ""}><span translate="no">${esc(x.name)}</span>${x.auto ? "" : " ✓"}</option>`).join("")}</select></div>` : ""}
     <div class="field"><label for="eCat">Kategorie</label><select id="eCat">${st.order.map((c,ix)=>`<option value="${c}"${c===catIn(it, st)?" selected":""}>${esc(CATS[c].l)}</option>`).join("")}</select></div>
+    ${viewOf() !== "simple" ? `<button class="btn ghost" type="button" id="ePin">${typeof posMap(st)[it.name.toLowerCase()] === "number" ? "Eigener Platz im Markt – ändern" : "Eigenen Platz im Markt geben"}</button>` : ""}
     <p class="note">Alle Mengenfelder sind optional. Wenn du die Kategorie änderst, merkt sich der Zettel das für das nächste Mal.</p>
     <div class="row"><button class="btn" type="button" id="eSave">Speichern</button><button class="btn danger" type="button" id="eDel">Löschen</button></div>`);
   const readQty = ()=>formatQty($("eCount").value, $("eAmount").value, $("eUnit").value);
+  if ($("ePin")) $("ePin").onclick = ()=>openRoute(st.id, it.name);
   if ($("eShop")) $("eShop").onchange = ()=>{               // anderer Laden → dessen Kategorien anbieten
     st = storeById($("eShop").value);
     const cur = catIn(it, st);
@@ -2320,16 +2411,37 @@ function openRouteChooser(){
     <button class="btn ghost" type="button" data-close>Schließen</button>`);
   document.querySelector(".sheet").addEventListener("click", e=>{ const b = e.target.closest("[data-rt]"); if (b) openRoute(b.dataset.rt); });
 }
-function openRoute(forStore){
+function openRoute(forStore, pinName){
   const st = (forStore && storeById(forStore)) || currentStore();
   const inMulti = viewOf() === "multi";
   let order = st.order.slice();
+  // Zeilen: Bereiche ({c}) und einzelne Artikel mit eigenem Platz ({n}); ein Artikel steht nach dem Bereich, in dessen Platz er fällt
+  const pins0 = posMap(st);
+  const pinRows = Object.entries(pins0).sort((a, b)=>a[1] - b[1]);
+  let rows = [];
+  // Artikel des Bereichs k stehen bei k+0,5 – ein eigener Platz p gehört hinter Bereich k, wenn k+0,5 < p ≤ k+1,5
+  const slotOf = p=>Math.min(order.length - 1, Math.ceil(p - 1.5));
+  pinRows.filter(([n, p])=>slotOf(p) < 0).forEach(([n])=>rows.push({n}));
+  order.forEach((c, k)=>{ rows.push({c}); pinRows.filter(([n, p])=>slotOf(p) === k).forEach(([n])=>rows.push({n})); });
+  const anchorOf = (rs, ix)=>{ for (let i = ix - 1; i >= 0; i--) if (rs[i].c) return rs[i].c; return null; };
+  const anchor0 = {}; rows.forEach((r, ix)=>{ if (r.n) anchor0[r.n] = anchorOf(rows, ix); });
+  let flash = null;
+  if (pinName){
+    const key = pinName.toLowerCase();
+    if (!rows.some(r=>r.n === key)){
+      const it = Object.values(state.items).find(i=>i.name.toLowerCase() === key) || {name:pinName};
+      const c = catIn(it, st), at = rows.findIndex(r=>r.c === c);
+      rows.splice(at + 1, 0, {n:key, fresh:true});
+    }
+    flash = key;
+  }
+  const nameOf = key=>{ const it = Object.values(state.items).find(i=>i.name.toLowerCase() === key); return it ? it.name : cap(key); };
   let delArm = false;
   // Das Fenster wird nur einmal aufgebaut. Danach ändert sich nur die Liste, damit nichts nach oben springt.
   const firstTime = !lsGet("tourRoute", 0);
   openSheet(`<h3>Reihenfolge: <span translate="no">${esc(st.name)}</span></h3>
     ${firstTime ? `<div class="introbar" id="rIntro"><span>Zum ersten Mal hier? Ich zeige dir kurz, wie es geht.</span><div class="row"><button class="btn tag" type="button" id="rIntroGo">Kurz zeigen</button><button class="tour-skip" type="button" id="rIntroNo">Nein, danke</button></div></div>` : ""}
-    <p class="note">Sortiere die Bereiche so, wie du durch deinen Markt läufst – oben der Eingang. <button class="linkbtn" type="button" id="rHelp">Kurz erklären</button></p>
+    <p class="note">Sortiere die Bereiche so, wie du durch deinen Markt läufst – oben der Eingang. Gelb hinterlegt: einzelne Artikel mit eigenem Platz. <button class="linkbtn" type="button" id="rHelp">Kurz erklären</button></p>
     <div id="rLearnWrap"></div>
     <ol class="route" id="routeList"></ol>
     <div class="row"><button class="btn" type="button" id="rSave">Reihenfolge speichern</button><span id="rExtra"></span></div>
@@ -2346,16 +2458,20 @@ function openRoute(forStore){
   }
 
   function drawList(focus){
-    list.innerHTML = order.map((c,ix)=>`<li data-cat="${c}">
+    order = rows.filter(r=>r.c).map(r=>r.c);
+    list.innerHTML = rows.map((r, ix)=>{
+      const label = r.c ? esc(CATS[r.c].l) : esc(nameOf(r.n));
+      return `<li ${r.c ? `data-cat="${r.c}"` : `data-item="${esc(r.n)}" class="pin${r.n === flash ? " flash" : ""}"`}>
       <span class="grip" aria-hidden="true">⠿</span>
-      <span class="nm">${esc(CATS[c].l)}</span>
-      <button type="button" data-mv="${ix}" data-d="-1" aria-label="${esc(CATS[c].l)} nach oben" ${ix===0?"disabled":""}>↑</button>
-      <button type="button" data-mv="${ix}" data-d="1" aria-label="${esc(CATS[c].l)} nach unten" ${ix===order.length-1?"disabled":""}>↓</button>
-    </li>`).join("");
+      <span class="nm">${r.c ? label : `<b translate="no">${label}</b><small>einzelner Artikel</small>`}</span>
+      <button type="button" data-mv="${ix}" data-d="-1" aria-label="${label} nach oben" ${ix===0?"disabled":""}>↑</button>
+      <button type="button" data-mv="${ix}" data-d="1" aria-label="${label} nach unten" ${ix===rows.length-1?"disabled":""}>↓</button>
+      ${r.n ? `<button type="button" data-unpin="${ix}" aria-label="${label} zurück in den Bereich" title="Zurück in den Bereich">✕</button>` : ""}
+    </li>`; }).join("");
     $("rLearnWrap").innerHTML = learnedOrder({order}) ? `<button class="btn tag" type="button" id="rLearn">Reihenfolge aus deinen Häkchen übernehmen</button>` : "";
     if ($("rLearn")) $("rLearn").onclick = ()=>{
       const lo = learnedOrder({order});
-      if (lo){ order = lo; drawList(); toast("Reihenfolge übernommen. Zum Behalten speichern."); }
+      if (lo){ const pinsOnly = rows.filter(r=>r.n); rows = lo.map(c=>({c})).concat(pinsOnly); drawList(); toast("Reihenfolge übernommen. Zum Behalten speichern."); }
     };
     if (focus){
       const b = list.querySelector(`[data-mv="${focus.ix}"][data-d="${focus.d}"]:not([disabled])`) || list.querySelector(`[data-mv="${focus.ix}"]:not([disabled])`);
@@ -2376,13 +2492,16 @@ function openRoute(forStore){
     };
   }
   drawList(); drawExtra();
+  if (flash){ const fl = list.querySelector("li.flash"); if (fl) setTimeout(()=>fl.scrollIntoView({block:"center"}), 50); toast(`Schieb „${nameOf(flash)}“ an die richtige Stelle und speichere.`); }
 
-  // Pfeile
+  // Pfeile, Artikel zurück in den Bereich
   list.addEventListener("click", e=>{
+    const u = e.target.closest("[data-unpin]");
+    if (u){ rows.splice(+u.dataset.unpin, 1); drawList(); return; }
     const b = e.target.closest("[data-mv]"); if (!b) return;
     const i = +b.dataset.mv, j = i + (+b.dataset.d);
-    if (j<0 || j>=order.length) return;
-    [order[i], order[j]] = [order[j], order[i]];
+    if (j<0 || j>=rows.length) return;
+    [rows[i], rows[j]] = [rows[j], rows[i]];
     drawList({ix:j, d:b.dataset.d});
   });
 
@@ -2394,7 +2513,7 @@ function openRoute(forStore){
   const blockScroll = e=>{ if (drag) e.preventDefault(); };
   document.addEventListener("touchmove", blockScroll, {passive:false});
   list.addEventListener("pointerdown", e=>{
-    const li = e.target.closest("li[data-cat]");
+    const li = e.target.closest("li[data-cat],li[data-item]");
     if (!li || drag || e.target.closest("button") || (e.pointerType === "mouse" && e.button !== 0)) return;
     const sx = e.clientX, sy = e.clientY, pid = e.pointerId;
     const begin = ()=>{
@@ -2455,18 +2574,30 @@ function openRoute(forStore){
     drag.li.style.transform = "";
     list.classList.remove("sorting");
     drag = null;
-    order = [...list.children].map(li=>li.dataset.cat);
+    rows = [...list.children].map(li=>li.dataset.cat ? {c:li.dataset.cat} : {n:li.dataset.item});
     drawList();
   };
   window.addEventListener("pointerup", endDrag);
   window.addEventListener("pointercancel", endDrag);
   sheetCleanup = ()=>{ document.removeEventListener("touchmove", blockScroll); window.removeEventListener("pointerup", endDrag); window.removeEventListener("pointercancel", endDrag); };
 
-  $("rSave").onclick = ()=>{ saveOrder(st, order); closeSheet(); toast("Reihenfolge gespeichert."); };
+  // Speichern: Bereiche in neuer Reihenfolge; Artikel bekommen ihren Platz nach dem Bereich, unter dem sie stehen
+  const pinsFromRows = ()=>{
+    const map = {}; let k = -1, j = 0;
+    rows.forEach((r, ix)=>{
+      if (r.c){ k++; j = 0; return; }
+      const old = pins0[r.n];
+      const sameAnchor = typeof old === "number" && anchor0[r.n] === anchorOf(rows, ix) && Math.max(-1, slotOf(old)) === k;
+      map[r.n] = sameAnchor ? old : k + 0.9 + j * 0.01; j++;
+    });
+    return map;
+  };
+  $("rSave").onclick = ()=>{ saveOrder(st, order); savePos(st, pinsFromRows()); closeSheet(); render(); toast("Reihenfolge gespeichert."); };
   $("rAdd").onclick = ()=>{
     const name = $("rNew").value.trim(); if (!name){ $("rNew").focus(); return; }
     const id = "m-"+newId();
     api.saveStore(id, {custom:true, name, type:st.type, order});
+    savePos({id}, pinsFromRows());
     if (inMulti){ const l = curList(); l.shops = l.shops || []; if (l.shops.includes(st.id)) l.shops = l.shops.map(x=>x === st.id ? id : x); else l.shops.push(id); saveLists(); }   // eigenen Markt statt Vorlage verwenden
     else { storeId = id; lsSet("store",storeId); curList().store = id; saveLists(); }
     closeSheet(); render(); toast(`${name} angelegt.`);
@@ -2776,6 +2907,7 @@ const unb64u = s => { s = s.replace(/-/g,"+").replace(/_/g,"/"); while (s.length
 const rndB64 = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
 const DEVICE = lsGet("device", "") || (()=>{ const d = rndB64(9); lsSet("device", d); return d; })();
 const syncs = new Map();                 // listId → {es, ok, key, timer, retry}
+function myName(){ return String(lsGet("myName", "") || "").trim(); }
 function syncServer(){ return (lsGet("syncServer", "") || SYNC_DEFAULT).replace(/\/+$/, ""); }
 function listById(id){ return lists.find(l=>l.id === id); }
 function itemsOf(lid){ return lid === listId ? state.items : lsGet(itemsKey(lid), {}); }
@@ -2830,6 +2962,7 @@ function syncTouched(lid){
 const pubTimers = {};
 function syncPublishSoon(lid, ms){ clearTimeout(pubTimers[lid]); pubTimers[lid] = setTimeout(()=>syncPublish(lid), ms == null ? 900 : ms); }
 async function syncSend(l, obj){
+  if (myName()) obj.nm = myName().slice(0, 30);
   const body = await seal(l, obj);
   const r = await fetch(`${l.share.s || syncServer()}/${l.share.t}`, {method:"POST", body});
   if (!r.ok) throw new Error("http " + r.status);
@@ -2908,7 +3041,8 @@ function syncConnect(lid, since){
     if (s.es !== es) return;
     const first = !s.ok; s.ok = true;
     const mm = smeta(lid); mm.lastOk = Date.now(); ssave(lid, mm);
-    if (s.hello){ s.hello = false; syncSend(l, {k:"hello", d:DEVICE, ts:Date.now()}).catch(()=>{ s.hello = true; }); }
+    if (s.hello){ s.hello = false; mm.lastHi = Date.now(); ssave(lid, mm); syncSend(l, {k:"hello", d:DEVICE, ts:Date.now()}).catch(()=>{ s.hello = true; }); }
+    else if (!mm.lastHi || Date.now() - mm.lastHi > 6 * 36e5){ mm.lastHi = Date.now(); ssave(lid, mm); syncSend(l, {k:"hi", d:DEVICE}).catch(()=>{}); }
     if (first && Object.keys(mm.pend).length) syncPublishSoon(lid, 200);
     if (first) syncStatusChanged();
   };
@@ -2920,7 +3054,10 @@ function syncConnect(lid, since){
     mm.last = d.id; mm.lastOk = Date.now(); ssave(lid, mm);
     const obj = await unseal(l, d.message);
     if (!obj || obj.d === DEVICE) return;
-    const m3 = smeta(lid); m3.seen[obj.d] = Date.now(); ssave(lid, m3);
+    const m3 = smeta(lid); m3.names = m3.names || {};
+    if (obj.k === "bye"){ delete m3.seen[obj.d]; delete m3.names[obj.d]; ssave(lid, m3); syncStatusChanged(); return; }   // hat die Liste verlassen
+    m3.seen[obj.d] = Date.now(); if (obj.nm) m3.names[obj.d] = String(obj.nm).slice(0, 30); ssave(lid, m3);
+    if (obj.k === "hi"){ syncStatusChanged(); return; }
     if (obj.k === "hello"){ if (Date.now() - (+obj.ts || 0) < 12 * 36e5) syncSendAll(lid); }
     else if (obj.k === "ops") await syncApply(lid, obj);
     syncStatusChanged();
@@ -2957,16 +3094,41 @@ function syncAll(){ for (const l of lists) if (l.share) syncStart(l.id); }
 function syncState(lid){
   const l = listById(lid || listId); if (!l || !l.share) return null;
   const s = syncs.get(l.id) || {}, m = smeta(l.id);
-  const others = Object.values(m.seen).filter(t=>Date.now() - t < 30 * 864e5).length;
-  return {ok: !!s.ok, pending: Object.keys(m.pend).length, devices: others + 1, lastOk: m.lastOk};
+  const names = m.names || {};
+  const members = Object.entries(m.seen).filter(([d, t])=>Date.now() - t < 60 * 864e5).sort((a, b)=>b[1] - a[1]).map(([d, t])=>({dev:d, name:names[d] || "", t}));
+  return {ok: !!s.ok, pending: Object.keys(m.pend).length, devices: members.length + 1, members, lastOk: m.lastOk};
 }
+function memberNames(st){ return st.members.map(x=>x.name || tr("Unbekannt")); }
 function syncStatusChanged(){
   const st = syncState(); const ico = $("shareIco");
   if (ico){ ico.hidden = !st; if (st) ico.classList.toggle("off", !st.ok); }
+  const bar = $("syncBar");
+  if (bar){
+    bar.hidden = !st;
+    if (st){
+      $("syncDot").classList.toggle("off", !st.ok);
+      const n = memberNames(st);
+      $("syncTxt").innerHTML = n.length ? `<span>Geteilt mit</span> <b translate="no">${esc(n.join(", "))}</b>${st.ok ? "" : " · <span>offline</span>"}`
+                                         : `<span>Gemeinsame Liste – noch niemand beigetreten</span>${st.ok ? "" : " · <span>offline</span>"}`;
+    }
+  }
   const box = $("shStatus"); if (box && st) box.innerHTML = syncStatusHtml(st);
+  const mb = $("shMembers"); if (mb && st) mb.innerHTML = membersHtml(st);
+}
+function agoText(t){
+  const m = Math.round((Date.now() - t) / 6e4);
+  if (m < 2) return "gerade eben";
+  if (m < 60) return `vor ${m} Min.`;
+  const h = Math.round(m / 60); if (h < 24) return `vor ${h} Std.`;
+  const d = Math.round(h / 24); return d === 1 ? "vor 1 Tag" : `vor ${d} Tagen`;
+}
+function membersHtml(st){
+  const me = myName();
+  return `<div class="memb"><span class="dot"></span><b>${me ? `<span translate="no">${esc(me)}</span> ` : ""}<span>(du)</span></b><small>dieses Gerät</small></div>`
+    + st.members.map(x=>`<div class="memb"><span class="dot${Date.now() - x.t > 7 * 864e5 ? " old" : ""}"></span><b>${x.name ? `<span translate="no">${esc(x.name)}</span>` : "<span>Unbekannt</span>"}</b><small>${agoText(x.t)}</small></div>`).join("");
 }
 function syncStatusHtml(st){
-  return `<span class="dot${st.ok ? "" : " off"}"></span>${st.ok ? "Verbunden" : "Gerade offline – Änderungen werden nachgeholt"}${st.devices > 1 ? ` · ${st.devices} Geräte` : " · noch niemand beigetreten"}${st.pending && st.ok ? " · sendet …" : ""}`;
+  return `<span class="dot${st.ok ? "" : " off"}"></span>${st.ok ? "Verbunden" : "Gerade offline – Änderungen werden nachgeholt"}${st.devices > 1 ? "" : " · noch niemand beigetreten"}${st.pending && st.ok ? " · sendet …" : ""}`;
 }
 window.addEventListener("online", ()=>{ for (const l of lists) if (l.share){ syncConnect(l.id); syncPublishSoon(l.id, 500); } });
 document.addEventListener("visibilitychange", ()=>{
@@ -2995,9 +3157,13 @@ function openJoin(inv){
     <h3>„${esc(inv.n)}“ beitreten?</h3>
     <p class="note" style="color:var(--fg)">Du wurdest zu einer gemeinsamen Einkaufsliste eingeladen. Danach seht ihr alle dieselbe Liste – was einer einträgt oder abhakt, sehen die anderen sofort.</p>
     <p class="note">Die Liste kommt als neue Liste dazu, deine anderen Listen bleiben, wie sie sind.</p>
+    <div class="field"><label for="jnName">Dein Name (sehen die anderen)</label><input id="jnName" type="text" maxlength="30" autocomplete="given-name" value="${esc(myName())}" placeholder="z. B. Anna"></div>
     <button class="btn" type="button" id="jnGo">Beitreten</button>
     <button class="btn ghost" type="button" data-close>Abbrechen</button>`);
   $("jnGo").onclick = ()=>{
+    const nm = $("jnName").value.trim();
+    if (!nm){ $("jnName").focus(); toast("Bitte gib deinen Namen ein – so sehen die anderen, wer dabei ist."); return; }
+    lsSet("myName", nm.slice(0, 30));
     const id = "l" + newId();
     lists.push({id, name:inv.n, store:storeId, view:"cat", share:{t:inv.t, k:inv.k, s:inv.s || undefined}});
     saveLists(); switchList(id); closeSheet();
@@ -3024,6 +3190,7 @@ function openShare(){
   if (!l.share){
     openSheet(`<h3>Gemeinsame Liste</h3>
       <p class="note" style="color:var(--fg)">Nutze „<span translate="no">${esc(l.name)}</span>“ zusammen mit anderen, z. B. in der Familie. Alle sehen dieselbe Liste, Änderungen erscheinen sofort bei allen.</p>
+      <div class="field"><label for="shName">Dein Name (sehen die anderen)</label><input id="shName" type="text" maxlength="30" autocomplete="given-name" value="${esc(myName())}" placeholder="z. B. Anna"></div>
       <button class="btn" type="button" id="shStart">„${esc(l.name)}“ gemeinsam nutzen</button>
       <p class="design-label" style="margin-top:6px">Einladung bekommen?</p>
       <div class="row"><input id="shJoinTxt" type="url" placeholder="Einladungslink hier einfügen" style="flex:3 1 180px;border:2px solid var(--line);background:var(--bg);border-radius:var(--r);padding:11px 12px"><button class="btn tag" type="button" id="shJoin" style="flex:1 1 auto">Beitreten</button></div>
@@ -3034,12 +3201,15 @@ function openShare(){
       </details>
       <button class="btn ghost" type="button" data-close>Schließen</button>`);
     $("shStart").onclick = ()=>{
+      const nm = $("shName").value.trim();
+      if (!nm){ $("shName").focus(); toast("Bitte gib deinen Namen ein – so sehen die anderen, wer dabei ist."); return; }
+      lsSet("myName", nm.slice(0, 30));
       const srv = ($("shSrv").value || "").trim().replace(/\/+$/, "");
       if (srv && srv !== syncServer() && /^https?:\/\/\S+$/.test(srv)) lsSet("syncServer", srv);
       l.share = {t:"ezl_" + rndB64(18), k:rndB64(32), s: syncServer() !== SYNC_DEFAULT ? syncServer() : undefined};
       saveLists(); syncStart(l.id); render(); openShare();
     };
-    $("shJoin").onclick = ()=>{ const inv = parseInvite($("shJoinTxt").value); if (inv) openJoin(inv); else toast("Das ist kein gültiger Einladungslink."); };
+    $("shJoin").onclick = ()=>{ if ($("shName").value.trim()) lsSet("myName", $("shName").value.trim().slice(0, 30)); const inv = parseInvite($("shJoinTxt").value); if (inv) openJoin(inv); else toast("Das ist kein gültiger Einladungslink."); };
     $("shScan").onclick = ()=>{ joinScan = true; openScanner(); };
     return;
   }
@@ -3047,6 +3217,9 @@ function openShare(){
   const st = syncState(l.id);
   openSheet(`<h3>Gemeinsame Liste</h3>
     <p class="note sync-status" id="shStatus">${syncStatusHtml(st)}</p>
+    <p class="design-label">Dabei</p>
+    <div class="menu-card" id="shMembers">${membersHtml(st)}</div>
+    <div class="field"><label for="shMyName">Dein Name</label><div class="row"><input id="shMyName" type="text" maxlength="30" value="${esc(myName())}" placeholder="z. B. Anna" style="flex:3 1 160px;border:2px solid var(--line);background:var(--bg);border-radius:var(--r);padding:11px 12px"><button class="btn ghost" type="button" id="shNameSave" style="flex:1 1 auto">Ändern</button></div></div>
     <p class="note" style="color:var(--fg)">Lade andere zu „<span translate="no">${esc(l.name)}</span>“ ein: QR-Code mit der Kamera scannen lassen oder den Link schicken.</p>
     <div class="qrbox" id="shQr" aria-label="QR-Code der Einladung"></div>
     <div class="row"><button class="btn" type="button" id="shSend">Einladung senden</button><button class="btn ghost" type="button" id="shCopy">Link kopieren</button></div>
@@ -3060,10 +3233,17 @@ function openShare(){
     if (navigator.share){ try{ await navigator.share({title:tr("Einkaufsliste"), text:tr(text), url}); return; }catch(e){ if (e && e.name === "AbortError") return; } }
     location.href = "https://wa.me/?text=" + encodeURIComponent(tr(text) + " " + url);
   };
+  $("shNameSave").onclick = ()=>{
+    const nm = $("shMyName").value.trim(); if (!nm){ $("shMyName").focus(); return; }
+    lsSet("myName", nm.slice(0, 30));
+    for (const x of lists) if (x.share){ const m = smeta(x.id); m.lastHi = Date.now(); ssave(x.id, m); syncSend(x, {k:"hi", d:DEVICE}).catch(()=>{}); }
+    syncStatusChanged(); toast("Name gespeichert.");
+  };
   $("shCopy").onclick = async ()=>{ try{ await navigator.clipboard.writeText(url); toast("Link kopiert."); }catch(e){ prompt("Link kopieren:", url); } };
   let armed = false;
   $("shLeave").onclick = ()=>{
     if (!armed){ armed = true; $("shLeave").textContent = "Wirklich? Nochmal tippen"; return; }
+    syncSend({id:l.id, share:Object.assign({}, l.share)}, {k:"bye", d:DEVICE}).catch(()=>{});   // Kopie: share wird gleich gelöscht
     syncStop(l.id); delete l.share; saveLists();
     try{ localStorage.removeItem(LS + ".sync." + l.id); }catch(e){}
     for (const it of Object.values(state.items)) delete it.m;
@@ -3364,13 +3544,30 @@ function openLists(editId){
   if (editId){
     const l = lists.find(x=>x.id===editId); if (!l) return openLists();
     let armed = false;
+    let kind = viewOf(l);
     openSheet(`<h3>Liste bearbeiten</h3>
       <div class="field"><label for="lsName">Name</label><input id="lsName" type="text" value="${esc(l.name)}"></div>
+      <p class="design-label">Ansicht</p>
+      <div class="seg" id="leKind">
+        <button type="button" data-kind="cat" aria-pressed="${kind === "cat"}"><b>Kategorien</b><small>ein Markt</small></button>
+        <button type="button" data-kind="multi" aria-pressed="${kind === "multi"}"><b>Nach Läden</b><small>mehrere Märkte</small></button>
+        <button type="button" data-kind="simple" aria-pressed="${kind === "simple"}"><b>Einfach</b><small>untereinander</small></button>
+      </div>
+      <p class="note">Die Artikel bleiben beim Umstellen erhalten und werden neu sortiert.</p>
       <div class="row"><button class="btn" type="button" id="lsSave">Speichern</button>
         <button class="btn danger" type="button" id="lsDel" ${lists.length < 2 ? "disabled" : ""}>Liste löschen</button></div>
       ${lists.length < 2 ? `<p class="note">Die letzte Liste kann nicht gelöscht werden.</p>` : ""}
       <button class="btn ghost" type="button" id="lsBack">Zurück</button>`);
-    $("lsSave").onclick = ()=>{ const n = $("lsName").value.trim(); if (n){ l.name = n; saveLists(); render(); } openLists(); };
+    $("leKind").onclick = e=>{ const b = e.target.closest("[data-kind]"); if (!b) return; kind = b.dataset.kind; document.querySelectorAll("#leKind [data-kind]").forEach(x=>x.setAttribute("aria-pressed", x === b ? "true" : "false")); };
+    $("lsSave").onclick = ()=>{
+      const n = $("lsName").value.trim(); if (n) l.name = n;
+      if (kind !== viewOf(l)){
+        l.view = kind; delete l.simple;
+        if (kind === "multi" && !l.shops){ const sid = l.store || storeId; l.shops = sid !== "standard" ? [sid] : []; }
+        toast(kind === "multi" ? "Die Liste ist jetzt nach Läden aufgeteilt." : kind === "simple" ? "Die Liste ist jetzt eine einfache Liste." : "Die Liste ist jetzt nach Kategorien sortiert.");
+      }
+      saveLists(); render(); openLists();
+    };
     $("lsBack").onclick = ()=>openLists();
     $("lsDel").onclick = ()=>{
       if (!armed){ armed = true; $("lsDel").textContent = `Wirklich löschen? (${listCount(l.id)} offene Artikel)`; return; }
@@ -3470,6 +3667,7 @@ function openShops(){
   saveLists(); render(); draw();
 }
 $("shopsChip").addEventListener("click", ()=>openShops());
+$("syncBar").addEventListener("click", ()=>openShare());
 
 /* ---------- Gerichte ----------
    Ein Gericht = Name, Portionen, Zutaten. Beim Hinzufügen lässt sich die Portionenzahl ändern

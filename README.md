@@ -168,6 +168,7 @@ Die Schriften liegen jetzt in der App selbst (`vendor/fonts`), es gibt keine Ver
 
 Menü → „Gemeinsame Liste“ → „… gemeinsam nutzen“. Danach erscheinen ein QR-Code und ein Einladungslink („Einladung senden“ öffnet z. B. WhatsApp). Wer den Link öffnet oder den QR-Code in der App scannt (Menü → „Gemeinsame Liste“ → „QR-Code scannen“), bekommt die Liste dazu. Ab dann sehen alle dieselbe Liste: Eintragen, Abhaken und Löschen erscheint sofort bei den anderen. Oben neben dem Listennamen zeigt ein kleines Personen-Symbol, dass die Liste geteilt ist (grau = gerade offline).
 
+- **Namen & Mitglieder:** Beim Starten und Beitreten gibt jeder seinen Namen ein (Pflicht). Unter der Kopfzeile steht bei geteilten Listen eine Leiste „Geteilt mit Anna, Tom“ (grüner Punkt = verbunden, grau = offline); antippen öffnet die Übersicht mit allen Mitgliedern („Dabei“) und wann sie zuletzt aktiv waren. Artikel, die andere eingetragen haben, zeigen klein den Namen darunter. Den eigenen Namen kann man dort ändern. Wer „Auf diesem Gerät nicht mehr teilen“ wählt, verschwindet bei den anderen aus der Liste.
 - **Kein eigener Server nötig:** Die Änderungen laufen über den kostenlosen, öffentlichen Dienst [ntfy.sh](https://ntfy.sh) (quelloffen, ohne Konto).
 - **Verschlüsselt:** Jede Änderung wird auf dem Handy mit AES-256 verschlüsselt. Der Schlüssel steht nur im Einladungslink (hinter dem `#`, wird nie an einen Server geschickt). ntfy.sh sieht nur Zeichensalat.
 - **Offline:** Änderungen ohne Netz werden gespeichert und nachgeholt. Bei mehreren Änderungen am selben Artikel gilt die neueste.
@@ -189,9 +190,19 @@ Einstellungen → „Einkaufsmodus“ einschalten. Dann erscheint oben neben dem
 
 Einstellungen → „Alle Daten löschen“ entfernt alle Listen, Artikel, Gerichte, eigene Märkte, gelernte Reihenfolgen, „Oft gekauft“, Barcodes und Einstellungen von diesem Gerät. Vorher lässt sich direkt eine Sicherung speichern. Zum Bestätigen zweimal tippen. Danach startet die App wie neu.
 
-## Laufweg lernen
+## Laufweg lernen & einzelne Artikel
 
-Wenn du beim Einkaufen in einer anderen Reihenfolge abhakst als gespeichert, fragt die App am Ende: „Soll … sich diese Reihenfolge merken?“ – mit „Übernehmen“ oder „Nein, danke“. „Nein, danke“ gilt nur für diesen Einkauf; beim nächsten Mal fragt sie wieder, falls du wieder anders läufst.
+Grundlage der Sortierung sind die **Bereiche** (Kategorien) in der Reihenfolge deines Markts. Zusätzlich kann jeder **einzelne Artikel** je Markt einen eigenen Platz bekommen – z. B. wenn Eier gleich hinter dem Obst stehen, die Milch aber ganz hinten.
+
+- **Nach dem Einkauf** vergleicht die App, wie du abgehakt hast, mit dem gespeicherten Weg. Passt etwas nicht, fragt sie: „Ganze Reihenfolge übernehmen“ (Bereiche neu ordnen), **„Einzelne Artikel anpassen“** oder „Nein, danke“ (gilt nur für diesen Einkauf).
+- **Einzelne Artikel anpassen:** zeigt deinen heutigen Weg; Artikel, die nicht zu ihrem Bereich passten, sind schon markiert („heute woanders“). „Plätze speichern“ – die Bereiche bleiben unverändert, nur diese Artikel bekommen ihren eigenen Platz.
+- **Von Hand:** beim Artikel über ⋯ → „Eigenen Platz im Markt geben“ – das Reihenfolge-Fenster öffnet sich mit dem Artikel (gelb), einfach an die richtige Stelle schieben und speichern. Im Reihenfolge-Fenster stehen alle Artikel mit eigenem Platz gelb zwischen den Bereichen; ✕ schickt einen Artikel zurück in seinen Bereich.
+- **In der Liste** erscheint ein Bereich dann ggf. zweimal (z. B. „Milch, Käse & Eier: Eier“ vorne und „Milch, Käse & Eier: Milch“ hinten) – genau so, wie du läufst.
+- **Im Einkaufsmodus** gibt es keine Überschriften: alle offenen Artikel stehen in einer Liste, genau in Laufweg-Reihenfolge.
+
+## Liste umstellen
+
+Jede bestehende Liste lässt sich umstellen: Listen → ⋯ bei der Liste → „Ansicht“ (Kategorien · Nach Läden · Einfach) – oder für die aktuelle Liste Einstellungen → „Ansicht“. Die Artikel bleiben erhalten und werden neu sortiert; bei „Nach Läden“ werden sie automatisch auf Supermarkt, Baumarkt usw. verteilt.
 
 ## Tipps beim ersten Start
 
@@ -223,7 +234,7 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v31";` hochzählen (v32, v33 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v33";` hochzählen (v34, v35 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
 - **Automatisch:** Die neue Version wird geladen und beim nächsten Öffnen aktiv.
