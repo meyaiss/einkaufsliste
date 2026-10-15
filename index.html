@@ -1069,7 +1069,7 @@ function lsSet(k,v){
   if (k === "items" || k.startsWith("items.")) try{ syncTouched(k === "items" ? "main" : k.slice(6)); }catch(e){}   // gemeinsame Liste: Änderung weitergeben
 }
 showPrices = lsGet("prices", false) === true;
-showIcons = lsGet("icons", true) !== false;
+showIcons = lsGet("icons", false) === true;   // standardmäßig aus
 
 let storeId = lsGet("store","standard");
 
@@ -2575,9 +2575,8 @@ function openSettings(){
       ${menuRow("wake", "sun", "Display anlassen", "Beim Einkaufen", {role:"switch", checked: wantWake})}
       ${menuRow("lang", "globe", "Sprache · Language", EN ? "English" : "Deutsch")}
       ${menuRow("shopmode", "cart", "Einkaufsmodus", "Knopf oben: große Schrift, nur offene Artikel", {role:"switch", checked: shopCfg})}
-      ${menuRow("icons", "smile", "Symbole", "Kleine Bilder vor den Artikeln", {role:"switch", checked: showIcons})}
       ${menuRow("prices", "euro", "Preise", "Preise eintragen und Summe zeigen", {role:"switch", checked: showPrices})}
-      ${menuRow("design", "palette", "Design & Schrift", `${esc(pal)} · ${modeTxt} · ${design.shape === "rund" ? "rund" : "eckig"} · Schrift ${({gross:"groß", sehrgross:"sehr groß"})[design.font] || "normal"}`)}
+      ${menuRow("design", "palette", "Design & Schrift", `${esc(pal)} · ${modeTxt} · ${design.shape === "rund" ? "rund" : "eckig"} · Schrift ${({gross:"groß", sehrgross:"sehr groß"})[design.font] || "normal"}${showIcons ? " · Symbole an" : ""}`)}
       ${menuRow("updates", "refresh", "Updates", `${updMode === "manual" ? "Auf Nachfrage" : "Automatisch"}${appVersion ? " · Version " + appVersion : ""}${updateReady ? " · neue Version bereit" : ""}`)}
     </div></div>
     <div class="menu-group"><p class="menu-title">Daten</p><div class="menu-card">
@@ -2610,7 +2609,6 @@ function openSettings(){
     else if (m === "wake"){ const on = await toggleWake(); b.setAttribute("aria-checked", on ? "true" : "false"); }
     else if (m === "shopmode"){ shopCfg = !shopCfg; lsSet("shopmodeBtn", shopCfg); if (!shopCfg && shopOn) await setShopMode(false); b.setAttribute("aria-checked", shopCfg ? "true" : "false"); applyShopBtn(); if (shopCfg) toast("Oben rechts ist jetzt der Knopf für den Einkaufsmodus."); }
     else if (m === "lang"){ openLang(); }
-    else if (m === "icons"){ showIcons = !showIcons; lsSet("icons", showIcons); b.setAttribute("aria-checked", showIcons ? "true" : "false"); render(); }
     else if (m === "prices"){ showPrices = !showPrices; lsSet("prices", showPrices); b.setAttribute("aria-checked", showPrices ? "true" : "false"); render(); }
   });
 }
@@ -2695,7 +2693,7 @@ try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", apply
 
 function openDesign(){
   const pressed = (a,b)=> a===b ? "true" : "false";
-  openSheet(`<h3>Design</h3>
+  openSheet(`<h3>Design & Schrift</h3>
     <p class="design-label">Farben</p>
     <div class="swatches" id="dsPal">${PALETTES.map(p=>`<button type="button" class="swatch" data-pal="${p.id}" aria-pressed="${pressed(design.palette,p.id)}"><span class="dots">${p.dots.map(c=>`<i style="background:${c}"></i>`).join("")}</span><span><span translate="no">${esc(p.name)}</span></span></button>`).join("")}</div>
     <p class="design-label">Hell oder dunkel</p>
@@ -2715,6 +2713,11 @@ function openDesign(){
       <button type="button" data-font="gross" aria-pressed="${pressed(design.font,"gross")}" style="font-size:calc(17px*1.15)">Groß</button>
       <button type="button" data-font="sehrgross" aria-pressed="${pressed(design.font,"sehrgross")}" style="font-size:calc(17px*1.3)">Sehr groß</button>
     </div>
+    <p class="design-label">Symbole vor den Artikeln</p>
+    <div class="seg two" id="dsIcons">
+      <button type="button" data-icons="0" aria-pressed="${!showIcons}">Aus</button>
+      <button type="button" data-icons="1" aria-pressed="${showIcons}">An <span aria-hidden="true">🥛🍞</span></button>
+    </div>
     <p class="note">„Automatisch“ folgt der Einstellung deines Handys. Das Design gilt nur auf diesem Gerät.</p>
     <button class="btn" type="button" data-close>Fertig</button>`);
   const set = (key, val, groupId, attr)=>{
@@ -2724,6 +2727,11 @@ function openDesign(){
   $("dsPal").onclick   = e=>{ const b = e.target.closest("[data-pal]");   if (b) set("palette", b.dataset.pal, "dsPal", "data-pal"); };
   $("dsMode").onclick  = e=>{ const b = e.target.closest("[data-mode]");  if (b) set("mode", b.dataset.mode, "dsMode", "data-mode"); };
   $("dsShape").onclick = e=>{ const b = e.target.closest("[data-shape]"); if (b) set("shape", b.dataset.shape, "dsShape", "data-shape"); };
+  $("dsIcons").onclick = e=>{
+    const b = e.target.closest("[data-icons]"); if (!b) return;
+    showIcons = b.dataset.icons === "1"; lsSet("icons", showIcons); render();
+    document.querySelectorAll("#dsIcons [data-icons]").forEach(x=>x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+  };
   $("dsFont").onclick  = e=>{ const b = e.target.closest("[data-font]");  if (b) set("font", b.dataset.font, "dsFont", "data-font"); };
 }
 
@@ -3161,6 +3169,7 @@ function startTour(steps, opt){
   if (tourOn) return; tourOn = true;
   const snapItems = JSON.stringify(state.items), snapFreq = JSON.stringify(state.freq);
   if (main) syncHold = true;                       // Beispiel-Artikel nicht an andere schicken
+  const iconsBefore = showIcons; if (main){ showIcons = false; render(); }   // Beispiele ohne Symbole zeigen
   const root = document.createElement("div");
   root.className = "tour"; root.setAttribute("role", "dialog"); root.setAttribute("aria-modal", "true"); root.setAttribute("aria-label", "Tipps zur Bedienung");
   root.innerHTML = `<div class="tour-hole"></div><div class="tour-card"><p id="tourTxt"></p><div class="tour-foot"><span class="dots" id="tourDots"></span><button class="tour-skip" type="button" id="tourSkip">Beenden</button><button class="btn" type="button" id="tourNext">Weiter</button></div></div>`;
@@ -3225,6 +3234,7 @@ function startTour(steps, opt){
     window.removeEventListener("keydown", onKey, true);
     if (main){
       state.items = JSON.parse(snapItems); state.freq = JSON.parse(snapFreq);   // Beispiel-Artikel wieder weg
+      showIcons = iconsBefore;
       persistLocal(); render();
       $("addInput").value = ""; showSugg();
       lsSet("tour", 1); syncHold = false;

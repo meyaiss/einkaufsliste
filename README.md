@@ -126,7 +126,7 @@ Gibst du einen Artikel ein, der schon auf der Liste steht, wird die Menge erhöh
 
 Die Startseite zeigt nur die Liste. Tipps zur Eingabe stehen nur da, solange die Liste leer ist.
 - **Menü (☰):** Listen, Gemeinsame Liste, Vorlagen & Gerichte, Liste senden/empfangen, Erledigte entfernen, Liste leeren, Einstellungen.
-- **Einstellungen:** Ansicht, Reihenfolge im Markt, Oft gekauft · Display anlassen, Einkaufsmodus, Symbole, Preise, Design & Schrift, Updates · Sicherung, Alle Daten löschen · Tipps zur Bedienung, App unterstützen, Datenschutz, Impressum.
+- **Einstellungen:** Ansicht, Reihenfolge im Markt, Oft gekauft · Display anlassen, Einkaufsmodus, Preise, Design & Schrift (inkl. Symbole), Updates · Sicherung, Alle Daten löschen · Tipps zur Bedienung, App unterstützen, Datenschutz, Impressum.
 
 ## Sprache: Deutsch / English
 
@@ -143,7 +143,7 @@ Technisch: Die englischen Texte stehen in `lang/en.js` (Wörterbuch Deutsch → 
 
 ## Symbole
 
-Vor jedem Artikel steht ein kleines Bild (🥛 Milch, 🍞 Brot, 🔨 Hammer …), bei unbekannten Artikeln das Symbol der Kategorie. Abschalten unter Einstellungen → „Symbole“.
+Auf Wunsch steht vor jedem Artikel ein kleines Bild (🥛 Milch, 🍞 Brot, 🔨 Hammer …), bei unbekannten Artikeln das Symbol der Kategorie. Standardmäßig aus; einschalten unter Einstellungen → „Design & Schrift“ → „Symbole vor den Artikeln“. Die Kurzanleitung zeigt ihre Beispiele immer ohne Symbole.
 
 ## Impressum & Datenschutz (vor dem Veröffentlichen ausfüllen!)
 
@@ -223,7 +223,7 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v30";` hochzählen (v31, v32 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v31";` hochzählen (v32, v33 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
 - **Automatisch:** Die neue Version wird geladen und beim nächsten Öffnen aktiv.

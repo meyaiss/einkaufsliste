@@ -283,6 +283,10 @@ const itemIcons = [
 
 /* ---------- Interface: German → English ---------- */
 const dict = {
+"Symbole vor den Artikeln": "Icons in front of items",
+"Aus": "Off",
+"An": "On",
+"Symbole an": "icons on",
 "Gericht bearbeiten": "Edit dish",
 "Lege ein Gericht einmal mit allen Zutaten an. Danach kommen die Zutaten mit einem Tipp auf die Liste, passend zur Portionenzahl.": "Create a dish once with all its ingredients. Then the ingredients go on the list with one tap, scaled to the number of servings.",
 "Markt löschen": "Delete store",

@@ -3,7 +3,7 @@
    - nimmt Dateien und Texte aus dem Android-Teilen-Menü an (share_target)
    - Updates: „Automatisch“ lädt neue Versionen sofort, „Auf Nachfrage“ wartet auf deinen Klick
    Bei Änderungen an der App die Versionsnummer erhöhen, damit Handys die neue Version bekommen. */
-const VERSION = "einkaufsliste-v30";
+const VERSION = "einkaufsliste-v31";
 const INBOX = "einkaufszettel-inbox";
 const SETTINGS = "einkaufsliste-settings";   // hier legt die App die Update-Einstellung ab
 const SHELL = [
