@@ -195,8 +195,10 @@ Einstellungen → „Alle Daten löschen“ entfernt alle Listen, Artikel, Geric
 Grundlage der Sortierung sind die **Bereiche** (Kategorien) in der Reihenfolge deines Markts. Zusätzlich kann jeder **einzelne Artikel** je Markt einen eigenen Platz bekommen – z. B. wenn Eier gleich hinter dem Obst stehen, die Milch aber ganz hinten.
 
 - **Nach dem Einkauf** vergleicht die App, wie du abgehakt hast, mit dem gespeicherten Weg. Passt etwas nicht, fragt sie: „Ganze Reihenfolge übernehmen“ (Bereiche neu ordnen), **„Einzelne Artikel anpassen“** oder „Nein, danke“ (gilt nur für diesen Einkauf).
-- **Einzelne Artikel anpassen:** zeigt deinen heutigen Weg; Artikel, die nicht zu ihrem Bereich passten, sind schon markiert („heute woanders“). „Plätze speichern“ – die Bereiche bleiben unverändert, nur diese Artikel bekommen ihren eigenen Platz.
-- **Von Hand:** beim Artikel über ⋯ → „Eigenen Platz im Markt geben“ – das Reihenfolge-Fenster öffnet sich mit dem Artikel (gelb), einfach an die richtige Stelle schieben und speichern. Im Reihenfolge-Fenster stehen alle Artikel mit eigenem Platz gelb zwischen den Bereichen; ✕ schickt einen Artikel zurück in seinen Bereich.
+- **Auch innerhalb eines Bereichs:** Hakst du z. B. Joghurt vor Milch ab, obwohl Milch oben steht, fragt die App ebenfalls nach („Einige Artikel standen heute an anderer Stelle“).
+- **Listen „Nach Läden“:** Die Frage kommt **je Laden**, sobald dort alles abgehakt ist („Supermarkt: alles im Wagen.“) – und nur, wenn die Reihenfolge abweicht. Übernehmen oder Ablehnen gilt nur für diesen Laden.
+- **Einzelne Artikel anpassen:** zeigt deinen heutigen Weg; Artikel, die nicht zur angezeigten Reihenfolge passten, sind schon markiert („heute woanders“). „Plätze speichern“ – die Bereiche bleiben unverändert, nur diese Artikel bekommen ihren eigenen Platz.
+- **Von Hand:** beim Artikel über ⋯ → „Eigenen Platz im Markt geben“ – das Reihenfolge-Fenster öffnet sich mit dem Artikel (gelb), einfach an die richtige Stelle schieben und speichern. Im Reihenfolge-Fenster stehen Artikel, die in einem anderen Bereich stehen, gelb zwischen den Bereichen (Feinheiten innerhalb eines Bereichs bleiben unsichtbar erhalten). Eigene Plätze hängen am Bereich davor – sortierst du die Bereiche später um, wandern sie mit; ✕ schickt einen Artikel zurück in seinen Bereich.
 - **In der Liste** erscheint ein Bereich dann ggf. zweimal (z. B. „Milch, Käse & Eier: Eier“ vorne und „Milch, Käse & Eier: Milch“ hinten) – genau so, wie du läufst.
 - **Im Einkaufsmodus** gibt es keine Überschriften: alle offenen Artikel stehen in einer Liste, genau in Laufweg-Reihenfolge.
 
@@ -234,7 +236,7 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v33";` hochzählen (v34, v35 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v34";` hochzählen (v35, v36 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
 - **Automatisch:** Die neue Version wird geladen und beim nächsten Öffnen aktiv.

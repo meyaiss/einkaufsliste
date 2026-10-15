@@ -1313,11 +1313,24 @@ function openStorePicker(opt){
 /* ---------- Einzelne Artikel im Laufweg ----------
    Grundlage sind die Bereiche (Kategorien): Bereich Nr. k belegt die Plätze k bis k+1, seine Artikel stehen bei k+0,5.
    Einzelne Artikel können je Markt einen eigenen Platz bekommen (z. B. Eier gleich nach Obst, obwohl Milch ganz hinten steht). */
-let itemPos = lsGet("itempos", {});                      // {marktId: {artikelname: platz}}
+let itemPos = lsGet("itempos", {});                      // {marktId: {artikelname: {a: Bereich davor, f: Anteil}}}
 function posMap(st){ return (st && itemPos[st.id]) || {}; }
 function savePos(st, map){ if (Object.keys(map).length) itemPos[st.id] = map; else delete itemPos[st.id]; lsSet("itempos", itemPos); }
+/* Platz relativ zu einem Bereich speichern – so bleibt er richtig, auch wenn du die Bereiche später umsortierst */
+function pinAbs(st, v){
+  if (typeof v === "number") return v;                                   // ältere Version: fester Platz
+  if (!v || typeof v.f !== "number") return undefined;
+  if (v.a == null) return -1 + v.f;
+  const k = st.order.indexOf(v.a); return k < 0 ? undefined : k + v.f;
+}
+function pinRel(st, p){
+  let k = Math.floor(p);
+  if (k < 0) return {a:null, f:Math.max(0, Math.min(0.999, p + 1))};
+  if (k >= st.order.length) k = st.order.length - 1;
+  return {a:st.order[k], f:Math.max(0, Math.min(0.999, p - k))};
+}
 function effPos(i, st){
-  const p = posMap(st)[i.name.toLowerCase()];
+  const p = pinAbs(st, posMap(st)[i.name.toLowerCase()]);
   if (typeof p === "number") return p;
   const k = st.order.indexOf(catIn(i, st));
   return (k < 0 ? st.order.length : k) + 0.5;
@@ -1333,66 +1346,106 @@ function sectionsHtml(items, st){
   flush();
   return html;
 }
-/* Heutiger Weg: abgehakte Artikel in der Reihenfolge der Häkchen */
-function tripWalk(){ return Object.values(state.items).filter(i=>i.done && i.dt > 0).sort((a, b)=>a.dt - b.dt); }
-/* Artikel, die heute nicht zum gespeicherten Weg passten (alles außer der längsten passenden Folge) */
-function tripOutliers(st){
-  const w = tripWalk(); if (w.length < 3) return [];
-  const e = w.map(i=>effPos(i, st)), n = e.length, prev = Array(n).fill(-1);
-  // Gewichtet: Ein Artikel, dessen Bereich heute nur einmal vorkam, ist eher am richtigen Platz als einer, der seinen Bereich „zerteilt“
-  const cats = w.map(i=>catIn(i, st)), cnt = {}; cats.forEach(c=>{ cnt[c] = (cnt[c] || 0) + 1; });
-  const wt = cats.map(c=>1 + (cnt[c] === 1 ? 0.01 : 0)), len = wt.slice();
-  for (let i = 0; i < n; i++) for (let j = 0; j < i; j++) if (e[j] <= e[i] && len[j] + wt[i] > len[i] + 1e-9){ len[i] = len[j] + wt[i]; prev[i] = j; }
+
+/* ---------- Nach dem Einkauf: Weg vergleichen ----------
+   Weg = abgehakte Artikel in der Reihenfolge der Häkchen (bei „Nach Läden“ nur die des jeweiligen Ladens). */
+function tripWalk(st){
+  const done = Object.values(state.items).filter(i=>i.done && i.dt > 0);
+  const mine = (st && viewOf() === "multi") ? done.filter(i=>shopFor(i, listShops()).id === st.id) : done;
+  return mine.sort((a, b)=>a.dt - b.dt);
+}
+function tripKey(st){ return Math.max(0, ...tripWalk(st).map(i=>i.dt || 0)); }
+function learnDeclined(st){
+  const n = lsGet("learnNo", null);
+  if (n && n.store !== undefined) return n.store === st.id && n.trip === tripKey(st);   // ältere Speicherform
+  return !!(n && n[st.id] === tripKey(st));
+}
+function markTripDone(st){ const n = lsGet("learnNo", null); const m = (n && n.store === undefined) ? n : {}; m[st.id] = tripKey(st); lsSet("learnNo", m); }
+/* Bereiche in anderer Reihenfolge als gespeichert? (Artikel mit eigenem Platz zählen hier nicht) */
+function learnedOrder(st, walk){
+  const pins = posMap(st);
+  walk = (walk || tripWalk(st)).filter(i=>pinAbs(st, pins[i.name.toLowerCase()]) === undefined);
+  const seen = [];
+  for (const i of walk){ const c = catIn(i, st); if (!seen.includes(c)) seen.push(c); }
+  if (seen.length < 2) return null;
+  const slots = seen.map(c=>st.order.indexOf(c)).sort((a, b)=>a - b);
+  const next = st.order.slice();
+  slots.forEach((slot, ix)=>{ next[slot] = seen[ix]; });
+  return next.join() === st.order.join() ? null : next;
+}
+/* Artikel, die heute nicht zur angezeigten Reihenfolge passten – auch innerhalb eines Bereichs (z. B. Milch und Eier).
+   Es bleibt die längste Folge, die zur Anzeige passt; der Rest gilt als „heute woanders“. */
+function tripOutliers(st, walk){
+  walk = walk || tripWalk(st); if (walk.length < 2) return [];
+  const disp = sortForStore(walk, st), rank = new Map(disp.map((i, ix)=>[i, ix]));
+  const r = walk.map(i=>rank.get(i)), n = r.length, prev = Array(n).fill(-1);
+  const cats = walk.map(i=>catIn(i, st)), cnt = {}; cats.forEach(c=>{ cnt[c] = (cnt[c] || 0) + 1; });
+  const wt = cats.map(c=>1 + (cnt[c] === 1 ? 0.01 : 0)), len = wt.slice();   // allein stehende Bereiche eher behalten
+  for (let i = 0; i < n; i++) for (let j = 0; j < i; j++) if (r[j] < r[i] && len[j] + wt[i] > len[i] + 1e-9){ len[i] = len[j] + wt[i]; prev[i] = j; }
   let best = 0; for (let i = 1; i < n; i++) if (len[i] > len[best]) best = i;
   const keep = new Set(); for (let i = best; i >= 0; i = prev[i]) keep.add(i);
-  return w.filter((_, i)=>!keep.has(i));
+  return walk.filter((_, i)=>!keep.has(i));
 }
-/* Ausgewählte Artikel bekommen ihren Platz zwischen den Nachbarn, zwischen denen sie heute lagen */
+/* Ausgewählte Artikel bekommen ihren Platz zwischen den Nachbarn von heute – wenn möglich im eigenen Bereich */
 function applyTripPositions(st, walk, sel){
-  const map = Object.assign({}, posMap(st)), e = walk.map(i=>effPos(i, st));
-  let count = 0;
-  for (let i = 0; i < walk.length; ){
+  const map = Object.assign({}, posMap(st)), n = walk.length;
+  const e = walk.map(i=>effPos(i, st)), fin = e.slice(), changed = new Set();
+  const catk = ix=>{ const k = st.order.indexOf(catIn(walk[ix], st)); return k < 0 ? st.order.length : k; };
+  for (let i = 0; i < n; ){
     if (!sel[i]){ i++; continue; }
-    let j = i; while (j < walk.length && sel[j]) j++;
-    let a = i > 0 ? e[i - 1] : null, b = j < walk.length ? e[j] : null;
+    let j = i; while (j < n && sel[j]) j++;
+    let a = i > 0 ? fin[i - 1] : null, b = j < n ? fin[j] : null;
     if (a == null && b == null){ i = j; continue; }
-    if (a == null) a = b - 1;
-    if (b == null) b = a + 1;
-    if (b <= a) b = a + 0.2;
-    for (let x = 0; x < j - i; x++){ map[walk[i + x].name.toLowerCase()] = a + (b - a) * (x + 1) / (j - i + 1); count++; }
+    if (a == null) a = b - 0.2;
+    if (b == null) b = a + 0.2;
+    if (b <= a) b = a + 0.01 * (j - i + 1);                              // gleicher Platz: knapp dahinter
+    const k0 = catk(i), same = Array.from({length:j - i}, (_, x)=>catk(i + x)).every(k=>k === k0);
+    const lo = same ? Math.max(a, k0) : a, hi = same ? Math.min(b, k0 + 1) : b;
+    const A = hi > lo ? lo : a, B = hi > lo ? hi : b;
+    for (let x = 0; x < j - i; x++){ fin[i + x] = A + (B - A) * (x + 1) / (j - i + 1); changed.add(i + x); }
     i = j;
   }
+  // Gleichstand im selben Bereich: die heutige Reihenfolge festhalten (nur, wo es nötig ist)
+  for (let ix = 1; ix < n; ix++){
+    if (!changed.has(ix) && Math.abs(fin[ix] - e[ix]) < 1e-9 && fin[ix] <= fin[ix - 1] && catk(ix) === catk(ix - 1) && changed.has(ix - 1)){
+      fin[ix] = fin[ix - 1] + 0.005; changed.add(ix);
+    }
+  }
+  for (const ix of changed) map[walk[ix].name.toLowerCase()] = pinRel(st, fin[ix]);
   savePos(st, map);
-  return count;
+  return [...changed].filter(ix=>sel[ix]).length;
 }
-function openTripAdjust(){
-  const st = currentStore(), walk = tripWalk();
-  const out = new Set(tripOutliers(st).map(i=>i.name.toLowerCase()));
-  const sel = walk.map(i=>out.has(i.name.toLowerCase()));
+/* Hinweis nach dem Einkauf (für einen Markt bzw. einen Laden der Liste) */
+function tripPromptHtml(st, title){
+  const walk = tripWalk(st);
+  if (!walk.length || learnDeclined(st)) return title ? "" : `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span></div>`;
+  const lo = learnedOrder(st, walk), outl = tripOutliers(st, walk);
+  if (!lo && !outl.length) return title ? "" : `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span></div>`;
+  const sid = esc(st.id);
+  return `<div class="allgood"><span>${title ? `<span translate="no">${esc(st.name)}</span>: <span>alles im Wagen.</span>` : "Alles im Wagen. Ab zur Kasse!"}</span>${lo
+      ? `<p>Du bist heute anders gelaufen als gespeichert. Soll <span translate="no">${esc(st.name)}</span> sich diese Reihenfolge merken?</p>`
+      : `<p>Einige Artikel standen heute an anderer Stelle. Willst du ihnen einen eigenen Platz geben?</p>`}
+    <div class="learnrow">${lo ? `<button class="btn tag" type="button" data-act="learn" data-store="${sid}">Ganze Reihenfolge übernehmen</button>` : ""}<button class="btn ${lo ? "learnno" : "tag"}" type="button" data-act="learnitems" data-store="${sid}">Einzelne Artikel anpassen</button><button class="btn learnno" type="button" data-act="learnno" data-store="${sid}">Nein, danke</button></div></div>`;
+}
+function storeForAct(b){ const id = b.dataset.store; return (viewOf() === "multi" ? listShops().find(s=>s.id === id) : null) || storeById(id) || currentStore(); }
+function openTripAdjust(st){
+  st = st || currentStore();
+  const walk = tripWalk(st);
+  const out = new Set(tripOutliers(st, walk));
+  const sel = walk.map(i=>out.has(i));
   openSheet(`<h3>Einzelne Artikel einsortieren</h3>
-    <p class="note">So bist du heute gelaufen, von oben nach unten. Markiere die Artikel, die in deinem Markt woanders stehen als ihr Bereich – sie bekommen einen eigenen Platz. Die Bereiche bleiben, wie sie sind.</p>
+    <p class="note">So bist du heute gelaufen, von oben nach unten. Markiere die Artikel, die in deinem Markt an einer anderen Stelle stehen – sie bekommen einen eigenen Platz. Die Bereiche bleiben, wie sie sind.</p>
     <div class="imprev"><ul id="taList">${walk.map((i, ix)=>`<li class="mrow"><label class="mcheck"><input type="checkbox" data-tix="${ix}" ${sel[ix] ? "checked" : ""}>
-      <span><span class="mname" translate="no">${esc(i.name)}</span><small>${esc(CATS[catIn(i, st)].l)}${out.has(i.name.toLowerCase()) ? " · <b>heute woanders</b>" : ""}</small></span></label></li>`).join("")}</ul></div>
+      <span><span class="mname" translate="no">${esc(i.name)}</span><small>${esc(CATS[catIn(i, st)].l)}${out.has(i) ? " · <b>heute woanders</b>" : ""}</small></span></label></li>`).join("")}</ul></div>
     <button class="btn" type="button" id="taSave">Plätze speichern</button>
     <button class="btn ghost" type="button" data-close>Abbrechen</button>`);
   $("taList").addEventListener("change", e=>{ const cb = e.target.closest("[data-tix]"); if (cb) sel[+cb.dataset.tix] = cb.checked; });
   $("taSave").onclick = ()=>{
     const n = applyTripPositions(st, walk, sel);
-    lsSet("learnNo", {store: st.id, trip: tripKey()});
+    markTripDone(st);
     closeSheet(); render();
     toast(n ? `${n} Artikel einzeln einsortiert.` : "Nichts geändert.");
   };
-}
-function learnedOrder(st){
-  const pins = posMap(st);
-  const done = Object.values(state.items).filter(i=>i.done && i.dt>0 && typeof pins[i.name.toLowerCase()] !== "number").sort((a,b)=>a.dt-b.dt);   // Artikel mit eigenem Platz zählen hier nicht
-  const seen = [];
-  for (const i of done){ const c = catIn(i, st); if (!seen.includes(c)) seen.push(c); }
-  if (seen.length < 2) return null;
-  const slots = seen.map(c=>st.order.indexOf(c)).sort((a,b)=>a-b);
-  const next = st.order.slice();
-  slots.forEach((slot,ix)=>{ next[slot] = seen[ix]; });
-  return next.join() === st.order.join() ? null : next;
 }
 function saveOrder(st, order){
   if (st.builtin) return api.saveStore(st.id, {order});
@@ -1447,7 +1500,8 @@ function render(){
     const by = new Map(shops.map(x=>[x.id, []]));
     for (const i of open) by.get(shopFor(i, shops).id).push(i);
     for (const sh of shops){
-      const its = by.get(sh.id); if (!its.length) continue;
+      const its = by.get(sh.id);
+      if (!its.length){ html += tripPromptHtml(sh, true); continue; }   // Laden fertig: ggf. nach dem Weg fragen
       html += `<section class="shop"><div class="shophead"><span><span translate="no">${esc(sh.name)}</span></span><small>${its.length}</small></div>`;
       html += sectionsHtml(its, sh);
       html += `</section>`;
@@ -1467,14 +1521,7 @@ function render(){
     }
   } else {
     html += sectionsHtml(open, st);
-    if (!open.length){
-      const declined = learnDeclined(st);
-      const lo = !declined && learnedOrder(st), outl = declined ? [] : tripOutliers(st);
-      html += `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span>${lo
-        ? `<p>Du bist heute anders gelaufen als gespeichert. Soll <span translate="no">${esc(st.name)}</span> sich diese Reihenfolge merken?</p>`
-        : outl.length ? `<p>Einige Artikel standen heute woanders als ihr Bereich. Willst du ihnen einen eigenen Platz geben?</p>` : ""}${lo || outl.length
-        ? `<div class="learnrow">${lo ? `<button class="btn tag" type="button" data-act="learn">Ganze Reihenfolge übernehmen</button>` : ""}<button class="btn ${lo ? "learnno" : "tag"}" type="button" data-act="learnitems">Einzelne Artikel anpassen</button><button class="btn learnno" type="button" data-act="learnno">Nein, danke</button></div>` : ""}</div>`;
-    }
+    if (!open.length) html += tripPromptHtml(st, false);
     if (done.length){
       done.sort((a,b)=>(b.dt||0)-(a.dt||0));
       html += `<section class="cart"><div class="cart-head"><h2>Im Wagen · ${done.length}</h2><button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
@@ -1728,13 +1775,13 @@ $("list").addEventListener("click", e=>{
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
   if (act==="learn"){
-    const st = currentStore(); const lo = learnedOrder(st);
-    if (lo){ saveOrder(st, lo); lsSet("learnNo", {store: st.id, trip: tripKey()}); toast(`Reihenfolge für ${st.name} gespeichert.`); }
+    const st = storeForAct(b); const lo = learnedOrder(st);
+    if (lo){ saveOrder(st, lo); markTripDone(st); render(); toast(`Reihenfolge für ${st.name} gespeichert.`); }
     return;
   }
-  if (act==="learnitems"){ openTripAdjust(); return; }
+  if (act==="learnitems"){ openTripAdjust(storeForAct(b)); return; }
   if (act==="learnno"){                                 // nur für diesen Einkauf nicht mehr fragen
-    const st = currentStore(); lsSet("learnNo", {store: st.id, trip: tripKey()}); render();
+    markTripDone(storeForAct(b)); render();
     toast("Okay, die gespeicherte Reihenfolge bleibt."); return;
   }
   if (act==="cleardone"){ clearDone(); return; }
@@ -1743,9 +1790,6 @@ $("list").addEventListener("click", e=>{
   if (act==="toggle") toggleItem(id);
   if (act==="edit") openEdit(id);
 });
-/* Ein Einkauf = die Häkchen bis zum letzten Abhaken. „Nein, danke“ gilt nur für diesen Einkauf. */
-function tripKey(){ return Math.max(0, ...Object.values(state.items).map(i=>i.done ? (i.dt || 0) : 0)); }
-function learnDeclined(st){ const n = lsGet("learnNo", null); return !!(n && n.store === st.id && n.trip === tripKey()); }
 function toggleItem(id){
   const it = state.items[id]; if (!it) return;
   justToggled = id;
@@ -2371,7 +2415,7 @@ function openEdit(id){
     <div class="field"><label for="eNote">Notiz (optional)</label><input id="eNote" type="text" value="${esc(it.note||"")}" placeholder="z. B. Bio, die rote Packung, nur wenn im Angebot"></div>
     ${multi && shops.length > 1 ? `<div class="field"><label for="eShop">Laden</label><select id="eShop">${shops.map(x=>`<option value="${esc(x.id)}"${x.id === st.id ? " selected" : ""}><span translate="no">${esc(x.name)}</span>${x.auto ? "" : " ✓"}</option>`).join("")}</select></div>` : ""}
     <div class="field"><label for="eCat">Kategorie</label><select id="eCat">${st.order.map((c,ix)=>`<option value="${c}"${c===catIn(it, st)?" selected":""}>${esc(CATS[c].l)}</option>`).join("")}</select></div>
-    ${viewOf() !== "simple" ? `<button class="btn ghost" type="button" id="ePin">${typeof posMap(st)[it.name.toLowerCase()] === "number" ? "Eigener Platz im Markt – ändern" : "Eigenen Platz im Markt geben"}</button>` : ""}
+    ${viewOf() !== "simple" ? `<button class="btn ghost" type="button" id="ePin">${pinAbs(st, posMap(st)[it.name.toLowerCase()]) !== undefined ? "Eigener Platz im Markt – ändern" : "Eigenen Platz im Markt geben"}</button>` : ""}
     <p class="note">Alle Mengenfelder sind optional. Wenn du die Kategorie änderst, merkt sich der Zettel das für das nächste Mal.</p>
     <div class="row"><button class="btn" type="button" id="eSave">Speichern</button><button class="btn danger" type="button" id="eDel">Löschen</button></div>`);
   const readQty = ()=>formatQty($("eCount").value, $("eAmount").value, $("eUnit").value);
@@ -2416,11 +2460,19 @@ function openRoute(forStore, pinName){
   const inMulti = viewOf() === "multi";
   let order = st.order.slice();
   // Zeilen: Bereiche ({c}) und einzelne Artikel mit eigenem Platz ({n}); ein Artikel steht nach dem Bereich, in dessen Platz er fällt
-  const pins0 = posMap(st);
-  const pinRows = Object.entries(pins0).sort((a, b)=>a[1] - b[1]);
+  // Eigene Plätze: in dieser Liste erscheinen nur Artikel, die in einem anderen Bereich stehen als ihrem eigenen.
+  // Feinheiten innerhalb eines Bereichs (aus „Einzelne Artikel anpassen“) bleiben unsichtbar erhalten.
+  const pins0 = posMap(st), hidden = {};
+  const ownCat = key=>{ const it = Object.values(state.items).find(i=>i.name.toLowerCase() === key) || {name:key}; return catIn(it, st); };
+  const slotOf = p=>Math.min(order.length - 1, Math.floor(p));      // Bereich, hinter dem der Artikel steht (-1 = ganz vorn)
+  const pinRows = [];
+  Object.entries(pins0).forEach(([n, v])=>{
+    const p = pinAbs(st, v); if (p === undefined) return;
+    const k = slotOf(p);
+    if (k >= 0 && order[k] === ownCat(n) && n !== (pinName || "").toLowerCase()) hidden[n] = v; else pinRows.push([n, p]);
+  });
+  pinRows.sort((a, b)=>a[1] - b[1]);
   let rows = [];
-  // Artikel des Bereichs k stehen bei k+0,5 – ein eigener Platz p gehört hinter Bereich k, wenn k+0,5 < p ≤ k+1,5
-  const slotOf = p=>Math.min(order.length - 1, Math.ceil(p - 1.5));
   pinRows.filter(([n, p])=>slotOf(p) < 0).forEach(([n])=>rows.push({n}));
   order.forEach((c, k)=>{ rows.push({c}); pinRows.filter(([n, p])=>slotOf(p) === k).forEach(([n])=>rows.push({n})); });
   const anchorOf = (rs, ix)=>{ for (let i = ix - 1; i >= 0; i--) if (rs[i].c) return rs[i].c; return null; };
@@ -2468,9 +2520,10 @@ function openRoute(forStore, pinName){
       <button type="button" data-mv="${ix}" data-d="1" aria-label="${label} nach unten" ${ix===rows.length-1?"disabled":""}>↓</button>
       ${r.n ? `<button type="button" data-unpin="${ix}" aria-label="${label} zurück in den Bereich" title="Zurück in den Bereich">✕</button>` : ""}
     </li>`; }).join("");
-    $("rLearnWrap").innerHTML = learnedOrder({order}) ? `<button class="btn tag" type="button" id="rLearn">Reihenfolge aus deinen Häkchen übernehmen</button>` : "";
+    const stNow = Object.assign({}, st, {order});
+    $("rLearnWrap").innerHTML = learnedOrder(stNow) ? `<button class="btn tag" type="button" id="rLearn">Reihenfolge aus deinen Häkchen übernehmen</button>` : "";
     if ($("rLearn")) $("rLearn").onclick = ()=>{
-      const lo = learnedOrder({order});
+      const lo = learnedOrder(stNow);
       if (lo){ const pinsOnly = rows.filter(r=>r.n); rows = lo.map(c=>({c})).concat(pinsOnly); drawList(); toast("Reihenfolge übernommen. Zum Behalten speichern."); }
     };
     if (focus){
@@ -2584,11 +2637,14 @@ function openRoute(forStore, pinName){
   // Speichern: Bereiche in neuer Reihenfolge; Artikel bekommen ihren Platz nach dem Bereich, unter dem sie stehen
   const pinsFromRows = ()=>{
     const map = {}; let k = -1, j = 0;
+    rows.forEach(r=>{ if (r.n) delete hidden[r.n]; });
+    Object.assign(map, hidden);
     rows.forEach((r, ix)=>{
       if (r.c){ k++; j = 0; return; }
-      const old = pins0[r.n];
-      const sameAnchor = typeof old === "number" && anchor0[r.n] === anchorOf(rows, ix) && Math.max(-1, slotOf(old)) === k;
-      map[r.n] = sameAnchor ? old : k + 0.9 + j * 0.01; j++;
+      const old = pins0[r.n], a = anchorOf(rows, ix);
+      if (old !== undefined && anchor0[r.n] === a) map[r.n] = typeof old === "number" ? pinRel(st, old) : old;   // nicht bewegt
+      else map[r.n] = {a, f:Math.min(0.99, 0.9 + j * 0.01)};
+      j++;
     });
     return map;
   };

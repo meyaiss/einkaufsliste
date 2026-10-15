@@ -284,11 +284,12 @@ const itemIcons = [
 /* ---------- Interface: German → English ---------- */
 const dict = {
 "Einzelne Artikel einsortieren": "Place individual items",
-"So bist du heute gelaufen, von oben nach unten. Markiere die Artikel, die in deinem Markt woanders stehen als ihr Bereich – sie bekommen einen eigenen Platz. Die Bereiche bleiben, wie sie sind.": "This is how you walked today, top to bottom. Tick the items that are somewhere else in your store than their area – they get their own place. The areas stay as they are.",
+"So bist du heute gelaufen, von oben nach unten. Markiere die Artikel, die in deinem Markt an einer anderen Stelle stehen – sie bekommen einen eigenen Platz. Die Bereiche bleiben, wie sie sind.": "This is how you walked today, top to bottom. Tick the items that are in a different spot in your store – they get their own place. The areas stay as they are.",
 "heute woanders": "elsewhere today",
 "Plätze speichern": "Save places",
 "Nichts geändert.": "Nothing changed.",
-"Einige Artikel standen heute woanders als ihr Bereich. Willst du ihnen einen eigenen Platz geben?": "Some items were somewhere else than their area today. Do you want to give them their own place?",
+"Einige Artikel standen heute an anderer Stelle. Willst du ihnen einen eigenen Platz geben?": "Some items were in a different spot today. Do you want to give them their own place?",
+"alles im Wagen.": "everything’s in the cart.",
 "Ganze Reihenfolge übernehmen": "Use the whole order",
 "Einzelne Artikel anpassen": "Adjust individual items",
 "einzelner Artikel": "single item",
