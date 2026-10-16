@@ -104,7 +104,7 @@ Menü → „Einstellungen“ → „Sicherung“ → „Sicherung speichern“ 
 
 ## Kopfzeile
 
-Beim Runterscrollen verschwindet die Kopfzeile, damit mehr Platz für die Liste ist. Ein Stück hochscrollen holt sie zurück.
+Beim Runterscrollen verschwindet die Kopfzeile, damit mehr Platz für die Liste ist. Sie kommt erst wieder, wenn du ganz nach oben scrollst – so bleibt die Liste beim Hin- und Herscrollen ruhig.
 
 ## Suchfeld
 
@@ -184,7 +184,7 @@ Einstellungen → „Design & Schrift“ → Schriftgröße: Normal, Groß oder 
 
 ## Einkaufsmodus
 
-Oben neben dem Menü sitzt ein Einkaufswagen-Knopf (standardmäßig sichtbar; unter Einstellungen → „Einkaufsmodus“ abschaltbar). Antippen schaltet um: größere Schrift, Suchfeld, Vorschläge und abgehakte Artikel ausgeblendet, das Display bleibt an. Mit „Beenden“ oder dem Knopf geht es zurück. Ist der Modus beim Schließen an, startet die App wieder darin.
+Oben neben dem Menü sitzt ein Einkaufswagen-Knopf (standardmäßig sichtbar; unter Einstellungen → „Einkaufsmodus“ abschaltbar). Antippen schaltet um: größere Schrift, Suchfeld, Vorschläge und abgehakte Artikel ausgeblendet, das Display bleibt an. Ausgeblendet sind auch alle Nebeninfos (mit wem die Liste geteilt ist, Summe, Update-Hinweis); der Markt steht nur klein als Text da. Mit „Beenden“ oder dem Knopf geht es zurück. Ist der Modus beim Schließen an, startet die App wieder darin.
 
 **Beim Beenden** prüft die App, ob du anders gelaufen bist, als die Liste sortiert war – auch wenn noch nicht alles abgehakt ist. Wenn ja, fragt sie im Fenster „Laufweg anpassen?“ nach (bei „Nach Läden“ je Laden). Was du nicht abgehakt hast, weil es das z. B. nicht gab, bleibt einfach an seinem Platz. Der Einkaufsmodus ist auch Teil der Kurzanleitung.
 
@@ -239,11 +239,11 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v35";` hochzählen (v36, v37 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v36";` hochzählen (v37, v38 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
-- **Automatisch:** Die neue Version wird geladen und beim nächsten Öffnen aktiv.
-- **Auf Nachfrage:** Oben erscheint „Eine neue Version ist da“, und erst nach „Aktualisieren“ wird gewechselt. Mit ✕ blendest du den Hinweis bis zum nächsten Start aus, ohne zu aktualisieren. Aktualisieren geht dann jederzeit unter Einstellungen → Updates.
+- **Auf Nachfrage (Standard):** Oben erscheint „Eine neue Version ist da“, und erst nach „Aktualisieren“ wird gewechselt. Mit ✕ blendest du den Hinweis bis zum nächsten Start aus, ohne zu aktualisieren. Aktualisieren geht dann jederzeit unter Einstellungen → Updates. Die bisherige Version bleibt auch dann, wenn du die App zwischendurch ganz schließt.
+- **Automatisch:** Die neue Version wird geladen und übernommen, sobald du gerade nichts eingibst.
 
 Dort gibt es auch „Jetzt nach Updates suchen“ und die installierte Versionsnummer.
 

@@ -1,9 +1,10 @@
 /* Service Worker für die Einkaufsliste
    - macht die App offline nutzbar
    - nimmt Dateien und Texte aus dem Android-Teilen-Menü an (share_target)
-   - Updates: „Automatisch“ lädt neue Versionen sofort, „Auf Nachfrage“ wartet auf deinen Klick
+   - Updates: „Auf Nachfrage“ (Standard) behält die benutzte Version, bis du „Aktualisieren“ tippst –
+     auch über einen Neustart der App hinweg. „Automatisch“ übernimmt neue Versionen sofort.
    Bei Änderungen an der App die Versionsnummer erhöhen, damit Handys die neue Version bekommen. */
-const VERSION = "einkaufsliste-v35";
+const VERSION = "einkaufsliste-v36";
 const INBOX = "einkaufszettel-inbox";
 const SETTINGS = "einkaufsliste-settings";   // hier legt die App die Update-Einstellung ab
 const SHELL = [
@@ -28,31 +29,64 @@ const SHELL = [
 async function updateMode() {
   try {
     const r = await (await caches.open(SETTINGS)).match("update-mode");
-    return r ? (await r.text()) : "auto";
-  } catch (e) { return "auto"; }
+    return r ? (await r.text()) : "manual";
+  } catch (e) { return "manual"; }
+}
+/* „served“ = die Version, die du gerade benutzt. Bei „Auf Nachfrage“ bleibt sie, bis du „Aktualisieren“ tippst –
+   auch wenn der Browser die neue Version beim nächsten Start schon aktiviert hat. */
+async function getServed() {
+  try { const r = await (await caches.open(SETTINGS)).match("served"); return r ? await r.text() : ""; } catch (e) { return ""; }
+}
+async function setServed(v) {
+  try { await (await caches.open(SETTINGS)).put("served", new Response(v)); } catch (e) {}
+}
+async function servedCache() {
+  if ((await updateMode()) === "manual") {
+    const sv = await getServed();
+    if (sv && sv !== VERSION && await caches.has(sv)) return sv;
+  }
+  return VERSION;
+}
+async function cleanup(keep) {
+  const keys = await caches.keys();
+  await Promise.all(keys.filter(k => k !== VERSION && k !== INBOX && k !== SETTINGS && k !== keep).map(k => caches.delete(k)));
 }
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const c = await caches.open(VERSION);
-    await c.addAll(SHELL);
+    // frisch vom Server holen (nicht aus dem Browser-Zwischenspeicher), damit alle Dateien zur neuen Version passen
+    await c.addAll(SHELL.map(u => new Request(u, { cache: "reload" })));
     // Automatisch: neue Version sofort übernehmen. Auf Nachfrage: warten, bis du „Aktualisieren“ tippst.
     if ((await updateMode()) !== "manual") self.skipWaiting();
   })());
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== INBOX && k !== SETTINGS).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    let keep = "";
+    if ((await updateMode()) === "manual") {
+      let sv = await getServed();
+      if (!sv) sv = (await caches.keys()).filter(k => /^einkaufsliste-v\d+$/.test(k) && k !== VERSION).pop() || "";   // Umstieg von älteren Versionen
+      if (sv && sv !== VERSION && await caches.has(sv)) { keep = sv; await setServed(sv); }
+    }
+    if (!keep) await setServed(VERSION);
+    await cleanup(keep);
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("message", event => {
   const d = event.data || {};
-  if (d.type === "skip-waiting") self.skipWaiting();
-  if (d.type === "version" && event.source) event.source.postMessage({ type: "version", version: VERSION });
+  if (d.type === "skip-waiting") event.waitUntil(setServed(VERSION).then(() => self.skipWaiting()));
+  if (d.type === "apply") event.waitUntil((async () => {          // neue Version ist schon aktiv, wurde aber noch zurückgehalten
+    await setServed(VERSION); await cleanup("");
+    if (event.source) event.source.postMessage({ type: "applied" });
+  })());
+  if (d.type === "version" && event.source) event.waitUntil((async () => {
+    if ((await updateMode()) !== "manual" && (await getServed()) !== VERSION) { await setServed(VERSION); await cleanup(""); }   // auf Automatisch umgestellt: alte Version aufräumen
+    event.source.postMessage({ type: "version", version: await servedCache(), latest: VERSION });
+  })());
 });
 
 self.addEventListener("fetch", event => {
@@ -69,16 +103,16 @@ self.addEventListener("fetch", event => {
   // App-Seite
   if (req.mode === "navigate") {
     event.respondWith((async () => {
-      const cache = await caches.open(VERSION);
+      const name = await servedCache(), cache = await caches.open(name);
       if ((await updateMode()) === "manual") {
-        // Auf Nachfrage: immer die installierte Version zeigen, neue kommt erst nach „Aktualisieren“
+        // Auf Nachfrage: immer die benutzte Version zeigen, neue kommt erst nach „Aktualisieren“
         const hit = await cache.match("./index.html");
         if (hit) return hit;
       }
       // Automatisch: erst Netz (neueste Fassung), ohne Netz aus dem Speicher
       try {
         const res = await fetch(req);
-        if (res.ok) cache.put("./index.html", res.clone());
+        if (res.ok && name === VERSION) cache.put("./index.html", res.clone());
         return res;
       } catch (e) {
         return (await cache.match("./index.html")) || Response.error();
@@ -87,17 +121,18 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // Eigene Dateien (Icons, Barcode-Erkennung): sofort aus dem Speicher, im Hintergrund aktualisieren
+  // Eigene Dateien: aus dem Speicher der benutzten Version (passend zur App-Seite), nur wenn sie fehlen aus dem Netz
   if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.open(VERSION).then(cache => cache.match(req).then(hit => {
-        const net = fetch(req).then(res => {
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        }).catch(() => hit);
-        return hit || net;
-      }))
-    );
+    event.respondWith((async () => {
+      const name = await servedCache(), cache = await caches.open(name);
+      const hit = await cache.match(req);
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res.ok && name === VERSION) cache.put(req, res.clone());
+        return res;
+      } catch (e) { return Response.error(); }
+    })());
   }
 });
 
