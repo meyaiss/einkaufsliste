@@ -3,7 +3,7 @@
   "short_name": "Shopping List",
   "description": "Shopping list to tick off – sorted by aisle, with barcode scanner, voice input and shared lists.",
   "lang": "en",
-  "id": "./",
+  "id": "./einkaufsliste/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
