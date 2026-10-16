@@ -182,9 +182,11 @@ Menü → „Gemeinsame Liste“ → „… gemeinsam nutzen“. Danach erschein
 
 Einstellungen → „Design & Schrift“ → Schriftgröße: Normal, Groß oder Sehr groß. Gilt für die ganze App.
 
-## Einkaufsmodus (optional)
+## Einkaufsmodus
 
-Einstellungen → „Einkaufsmodus“ einschalten. Dann erscheint oben neben dem Menü ein Einkaufswagen-Knopf. Antippen schaltet um: größere Schrift, Suchfeld, Vorschläge und abgehakte Artikel ausgeblendet, das Display bleibt an. Mit „Beenden“ oder dem Knopf geht es zurück. Ist der Modus beim Schließen an, startet die App wieder darin.
+Oben neben dem Menü sitzt ein Einkaufswagen-Knopf (standardmäßig sichtbar; unter Einstellungen → „Einkaufsmodus“ abschaltbar). Antippen schaltet um: größere Schrift, Suchfeld, Vorschläge und abgehakte Artikel ausgeblendet, das Display bleibt an. Mit „Beenden“ oder dem Knopf geht es zurück. Ist der Modus beim Schließen an, startet die App wieder darin.
+
+**Beim Beenden** prüft die App, ob du anders gelaufen bist, als die Liste sortiert war – auch wenn noch nicht alles abgehakt ist. Wenn ja, fragt sie im Fenster „Laufweg anpassen?“ nach (bei „Nach Läden“ je Laden). Was du nicht abgehakt hast, weil es das z. B. nicht gab, bleibt einfach an seinem Platz. Der Einkaufsmodus ist auch Teil der Kurzanleitung.
 
 ## Alle Daten löschen
 
@@ -200,6 +202,7 @@ Grundlage der Sortierung sind die **Bereiche** (Kategorien) in der Reihenfolge d
 - **Einzelne Artikel anpassen:** zeigt deinen heutigen Weg; Artikel, die nicht zur angezeigten Reihenfolge passten, sind schon markiert („heute woanders“). „Plätze speichern“ – die Bereiche bleiben unverändert, nur diese Artikel bekommen ihren eigenen Platz.
 - **Von Hand:** beim Artikel über ⋯ → „Eigenen Platz im Markt geben“ – das Reihenfolge-Fenster öffnet sich mit dem Artikel (gelb), einfach an die richtige Stelle schieben und speichern. Im Reihenfolge-Fenster stehen Artikel, die in einem anderen Bereich stehen, gelb zwischen den Bereichen (Feinheiten innerhalb eines Bereichs bleiben unsichtbar erhalten). Eigene Plätze hängen am Bereich davor – sortierst du die Bereiche später um, wandern sie mit; ✕ schickt einen Artikel zurück in seinen Bereich.
 - **In der Liste** erscheint ein Bereich dann ggf. zweimal (z. B. „Milch, Käse & Eier: Eier“ vorne und „Milch, Käse & Eier: Milch“ hinten) – genau so, wie du läufst.
+- **Auch ohne Einkaufsmodus und ohne alles abzuhaken:** Weicht der Weg ab, erscheint im Wagen der Knopf „Weg anpassen“. Und tippst du auf „Erledigte entfernen“, fragt die App vorher nach – sonst wäre der heutige Weg weg („Überspringen“ entfernt trotzdem).
 - **Im Einkaufsmodus** gibt es keine Überschriften: alle offenen Artikel stehen in einer Liste, genau in Laufweg-Reihenfolge.
 
 ## Liste umstellen
@@ -236,7 +239,7 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v34";` hochzählen (v35, v36 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v35";` hochzählen (v36, v37 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
 - **Automatisch:** Die neue Version wird geladen und beim nächsten Öffnen aktiv.

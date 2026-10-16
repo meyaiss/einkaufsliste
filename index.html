@@ -310,6 +310,7 @@ li.pop{animation:pop .35s ease}
 .cart{margin-top:28px}
 .cart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .cart-head h2{font-family:var(--font-sign);font-size:calc(22px*var(--fs));margin:0;color:var(--muted)}
+.cart-btns{display:flex;gap:8px;flex-wrap:wrap}
 .cart-head button{padding:8px 12px;font-size:calc(15px*var(--fs))}
 
 .empty{margin-top:28px;padding:22px;border:2px dashed var(--line);border-radius:var(--r);color:var(--muted);text-align:left}
@@ -317,6 +318,7 @@ li.pop{animation:pop .35s ease}
 .allgood{margin-top:20px;padding:16px 18px;border-radius:var(--r);background:var(--aisle);color:var(--aisle-fg);font-weight:700;display:grid;gap:10px;justify-items:start}
 .learnrow{display:flex;gap:8px;flex-wrap:wrap}
 .learnno{background:rgba(255,255,255,.16);color:inherit}
+.sheet .allgood.trip{margin-top:12px}
 .allgood p{margin:0;font-weight:400;font-size:calc(15px*var(--fs))}
 .inote{display:block;font-size:calc(14px*var(--fs));color:var(--muted);text-decoration:none}
 li.done .inote{color:var(--done)}
@@ -1415,20 +1417,71 @@ function applyTripPositions(st, walk, sel){
   savePos(st, map);
   return [...changed].filter(ix=>sel[ix]).length;
 }
-/* Hinweis nach dem Einkauf (für einen Markt bzw. einen Laden der Liste) */
-function tripPromptHtml(st, title){
+/* Weicht der heutige Weg ab? (null = passt / schon beantwortet). Nicht abgehakte Artikel zählen nicht –
+   so lässt sich der Weg auch anpassen, wenn es etwas nicht gab. */
+function tripDeviation(st){
+  if (!st) return null;
   const walk = tripWalk(st);
-  if (!walk.length || learnDeclined(st)) return title ? "" : `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span></div>`;
+  if (walk.length < 2 || learnDeclined(st)) return null;
   const lo = learnedOrder(st, walk), outl = tripOutliers(st, walk);
-  if (!lo && !outl.length) return title ? "" : `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span></div>`;
+  return (lo || outl.length) ? {walk, lo, outl} : null;
+}
+function tripStores(){ const v = viewOf(); return v === "multi" ? listShops() : v === "simple" ? [] : [currentStore()]; }
+function pendingTrips(){ return tripStores().filter(st=>tripDeviation(st)); }
+function storeHasOpen(st){
+  const open = Object.values(state.items).filter(i=>!i.done);
+  return viewOf() === "multi" ? open.some(i=>shopFor(i, listShops()).id === st.id) : open.length > 0;
+}
+function tripAskHtml(st, d){
   const sid = esc(st.id);
-  return `<div class="allgood"><span>${title ? `<span translate="no">${esc(st.name)}</span>: <span>alles im Wagen.</span>` : "Alles im Wagen. Ab zur Kasse!"}</span>${lo
+  return `${d.lo
       ? `<p>Du bist heute anders gelaufen als gespeichert. Soll <span translate="no">${esc(st.name)}</span> sich diese Reihenfolge merken?</p>`
       : `<p>Einige Artikel standen heute an anderer Stelle. Willst du ihnen einen eigenen Platz geben?</p>`}
-    <div class="learnrow">${lo ? `<button class="btn tag" type="button" data-act="learn" data-store="${sid}">Ganze Reihenfolge übernehmen</button>` : ""}<button class="btn ${lo ? "learnno" : "tag"}" type="button" data-act="learnitems" data-store="${sid}">Einzelne Artikel anpassen</button><button class="btn learnno" type="button" data-act="learnno" data-store="${sid}">Nein, danke</button></div></div>`;
+    <div class="learnrow">${d.lo ? `<button class="btn tag" type="button" data-act="learn" data-store="${sid}">Ganze Reihenfolge übernehmen</button>` : ""}<button class="btn ${d.lo ? "learnno" : "tag"}" type="button" data-act="learnitems" data-store="${sid}">Einzelne Artikel anpassen</button><button class="btn learnno" type="button" data-act="learnno" data-store="${sid}">Nein, danke</button></div>`;
+}
+/* Hinweis nach dem Einkauf (für einen Markt bzw. einen Laden der Liste) */
+function tripPromptHtml(st, title){
+  const d = tripDeviation(st);
+  if (!d) return title ? "" : `<div class="allgood"><span>Alles im Wagen. Ab zur Kasse!</span></div>`;
+  return `<div class="allgood"><span>${title ? `<span translate="no">${esc(st.name)}</span>: <span>alles im Wagen.</span>` : "Alles im Wagen. Ab zur Kasse!"}</span>${tripAskHtml(st, d)}</div>`;
 }
 function storeForAct(b){ const id = b.dataset.store; return (viewOf() === "multi" ? listShops().find(s=>s.id === id) : null) || storeById(id) || currentStore(); }
-function openTripAdjust(st){
+/* Antwort auf die Frage – aus der Liste oder aus dem Fenster „Laufweg anpassen?“ */
+function tripAct(act, st, then){
+  if (act === "learn"){
+    const lo = learnedOrder(st);
+    if (lo){ saveOrder(st, lo); toast(`Reihenfolge für ${st.name} gespeichert.`); }
+    markTripDone(st); then(); return;
+  }
+  if (act === "learnitems"){ openTripAdjust(st, then); return; }
+  if (act === "learnno"){ markTripDone(st); toast("Okay, die gespeicherte Reihenfolge bleibt."); then(); }
+}
+/* Fenster „Laufweg anpassen?“ – nach dem Einkaufsmodus, über „Weg anpassen“ im Wagen
+   oder vor „Erledigte entfernen“. Auch wenn noch nicht alles abgehakt ist. */
+function openTripReview(opt){
+  opt = opt || {};
+  let handoff = false, finished = false;
+  const finish = ()=>{ if (finished) return; finished = true; render(); if (opt.after) opt.after(); };
+  const draw = ()=>{
+    render();
+    const ps = pendingTrips();
+    if (!ps.length){ handoff = false; if (sheetCleanup) closeSheet(); else finish(); return; }
+    handoff = true;
+    openSheet(`<h3>Laufweg anpassen?</h3>
+      <p class="note"><span>${opt.intro || "Du bist heute anders gelaufen, als die Liste sortiert ist."}</span> <span>Was du nicht abgehakt hast (z. B. weil es das nicht gab), bleibt an seinem Platz.</span></p>
+      ${ps.map(st=>{ const d = tripDeviation(st); return `<div class="allgood trip">${ps.length > 1 || viewOf() === "multi" ? `<span translate="no">${esc(st.name)}</span>` : ""}${tripAskHtml(st, d)}</div>`; }).join("")}
+      <button class="btn ghost" type="button" id="trSkip">${opt.after ? "Überspringen" : "Später"}</button>`, ()=>{ if (!handoff) finish(); });
+    handoff = false;
+    $("trSkip").onclick = closeSheet;
+    document.querySelector(".sheet").addEventListener("click", e=>{
+      const b = e.target.closest("[data-act]"); if (!b) return;
+      const act = b.dataset.act; if (act === "learnitems") handoff = true;
+      tripAct(act, storeForAct(b), draw);
+    });
+  };
+  draw();
+}
+function openTripAdjust(st, then){
   st = st || currentStore();
   const walk = tripWalk(st);
   const out = new Set(tripOutliers(st, walk));
@@ -1445,6 +1498,7 @@ function openTripAdjust(st){
     markTripDone(st);
     closeSheet(); render();
     toast(n ? `${n} Artikel einzeln einsortiert.` : "Nichts geändert.");
+    if (then) then();
   };
 }
 function saveOrder(st, order){
@@ -1487,6 +1541,8 @@ function render(){
 
   let html = "";
   const view = viewOf(), simple = view === "simple", multi = view === "multi";
+  // „Weg anpassen“ im Wagen: wenn der Weg abweicht, die Frage aber noch nicht in der Liste steht (noch nicht alles abgehakt)
+  const tripBtn = (!simple && done.length > 1 && pendingTrips().some(storeHasOpen)) ? `<button class="btn ghost" type="button" data-act="tripreview">Weg anpassen</button>` : "";
   $("storeChip").hidden = simple || multi;               // einfache Liste: kein Markt nötig
   $("shopsChip").hidden = !multi;
   if (multi) $("shopsTxt").textContent = shopsText();
@@ -1509,7 +1565,7 @@ function render(){
     if (!open.length) html += `<div class="allgood"><span>Alles erledigt!</span></div>`;
     if (done.length){
       done.sort((a,b)=>(b.dt||0)-(a.dt||0));
-      html += `<section class="cart"><div class="cart-head"><h2>Erledigt · ${done.length}</h2><button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
+      html += `<section class="cart"><div class="cart-head"><h2>Erledigt · ${done.length}</h2><div class="cart-btns">${tripBtn}<button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
     }
   } else if (simple){
     // Einfache Liste: alles untereinander in der Reihenfolge, in der es eingetragen wurde
@@ -1517,14 +1573,14 @@ function render(){
     else html += `<div class="allgood"><span>Alles erledigt!</span></div>`;
     if (done.length){
       done.sort((a,b)=>(b.dt||0)-(a.dt||0));
-      html += `<section class="cart"><div class="cart-head"><h2>Erledigt · ${done.length}</h2><button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
+      html += `<section class="cart"><div class="cart-head"><h2>Erledigt · ${done.length}</h2><div class="cart-btns">${tripBtn}<button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
     }
   } else {
     html += sectionsHtml(open, st);
     if (!open.length) html += tripPromptHtml(st, false);
     if (done.length){
       done.sort((a,b)=>(b.dt||0)-(a.dt||0));
-      html += `<section class="cart"><div class="cart-head"><h2>Im Wagen · ${done.length}</h2><button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
+      html += `<section class="cart"><div class="cart-head"><h2>Im Wagen · ${done.length}</h2><div class="cart-btns">${tripBtn}<button class="btn ghost" type="button" data-act="cleardone">Erledigte entfernen</button></div></div><ul class="items" style="margin-top:8px">${done.map(rowHtml).join("")}</ul></section>`;
     }
   }
   $("list").innerHTML = html;
@@ -1774,16 +1830,8 @@ $("storeChip").addEventListener("click", ()=>openStorePicker({onPick: id=>{ setS
 $("list").addEventListener("click", e=>{
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act;
-  if (act==="learn"){
-    const st = storeForAct(b); const lo = learnedOrder(st);
-    if (lo){ saveOrder(st, lo); markTripDone(st); render(); toast(`Reihenfolge für ${st.name} gespeichert.`); }
-    return;
-  }
-  if (act==="learnitems"){ openTripAdjust(storeForAct(b)); return; }
-  if (act==="learnno"){                                 // nur für diesen Einkauf nicht mehr fragen
-    markTripDone(storeForAct(b)); render();
-    toast("Okay, die gespeicherte Reihenfolge bleibt."); return;
-  }
+  if (act==="learn" || act==="learnitems" || act==="learnno"){ tripAct(act, storeForAct(b), render); return; }
+  if (act==="tripreview"){ openTripReview({intro:"Bis hierher bist du anders gelaufen, als die Liste sortiert ist."}); return; }
   if (act==="cleardone"){ clearDone(); return; }
   if (swipeJustEnded) return;
   const li = b.closest("li"); const id = li && li.dataset.id; const it = state.items[id]; if (!it) return;
@@ -2094,9 +2142,13 @@ function clearAll(){
   all.forEach(([id])=>api.removeItem(id));
   toast(`${all.length} Artikel gelöscht.`, ()=>all.forEach(([id,v])=>api.setItem(id,Object.assign({},v))));
 }
-function clearDone(){
+function clearDone(force){
   const done = Object.entries(state.items).filter(([id,v])=>v.done);
   if (!done.length) return;
+  if (!force && pendingTrips().length){                 // erst fragen, sonst geht der heutige Weg verloren
+    openTripReview({intro:"Bevor die erledigten Artikel verschwinden: Du bist heute anders gelaufen, als die Liste sortiert ist.", after:()=>clearDone(true)});
+    return;
+  }
   done.forEach(([id])=>api.removeItem(id));
   toast(`${done.length} erledigte entfernt.`, ()=>done.forEach(([id,v])=>api.setItem(id, Object.assign({},v))));
 }
@@ -2116,23 +2168,29 @@ async function toggleWake(){
 }
 document.addEventListener("visibilitychange", ()=>{ if (wantWake && !wake && document.visibilityState==="visible") reqWake(); });
 
-/* ---------- Einkaufsmodus (optional, in den Einstellungen einschalten) ----------
+/* ---------- Einkaufsmodus (Knopf standardmäßig da, in den Einstellungen abschaltbar) ----------
    Ein Knopf oben schaltet um: größere Schrift, Suchfeld und Vorschläge weg, nur die offenen Artikel,
    Display bleibt an. „Beenden“ oder der Knopf schalten zurück. */
-let shopCfg = lsGet("shopmodeBtn", false) === true;
+let shopCfg = lsGet("shopmodeBtn", true) !== false;            // Knopf standardmäßig sichtbar, in den Einstellungen abschaltbar
 let shopOn = false, shopWake = false;
 function applyShopBtn(){ $("shopBtn").classList.toggle("show", shopCfg); }
-async function setShopMode(on){
-  shopOn = on; lsSet("shopmode", on);
+async function setShopMode(on, quiet){
+  shopOn = on; if (!quiet) lsSet("shopmode", on);
   document.body.classList.toggle("shopmode", on);
   render();
   $("shopBtn").setAttribute("aria-pressed", on ? "true" : "false");
-  if (on && !wantWake && "wakeLock" in navigator){ if (await reqWake()){ wantWake = true; shopWake = true; } }
+  if (on && !quiet && !wantWake && "wakeLock" in navigator){ if (await reqWake()){ wantWake = true; shopWake = true; } }
   if (!on && shopWake){ shopWake = false; wantWake = false; if (wake) try{ await wake.release(); }catch(_){} }
   window.scrollTo(0, 0);
 }
-$("shopBtn").addEventListener("click", ()=>setShopMode(!shopOn));
-$("shopEnd").addEventListener("click", ()=>setShopMode(false));
+/* Beenden: Ist der Weg anders gelaufen, fragt die App gleich nach – auch wenn noch nicht alles abgehakt ist */
+async function endShopMode(){
+  if (!shopOn) return;
+  await setShopMode(false);
+  if (!tourOn && pendingTrips().length) openTripReview({intro:"Du bist heute anders gelaufen, als die Liste sortiert war."});
+}
+$("shopBtn").addEventListener("click", ()=>shopOn ? endShopMode() : setShopMode(true));
+$("shopEnd").addEventListener("click", endShopMode);
 applyShopBtn();
 if (shopCfg && lsGet("shopmode", false) === true) setShopMode(true);   // war beim Schließen an: weiter einkaufen
 
@@ -2794,7 +2852,7 @@ function openSettings(){
     else if (m === "privacy"){ openPrivacy(); }
     else if (m === "impressum"){ openImpressum(); }
     else if (m === "wake"){ const on = await toggleWake(); b.setAttribute("aria-checked", on ? "true" : "false"); }
-    else if (m === "shopmode"){ shopCfg = !shopCfg; lsSet("shopmodeBtn", shopCfg); if (!shopCfg && shopOn) await setShopMode(false); b.setAttribute("aria-checked", shopCfg ? "true" : "false"); applyShopBtn(); if (shopCfg) toast("Oben rechts ist jetzt der Knopf für den Einkaufsmodus."); }
+    else if (m === "shopmode"){ shopCfg = !shopCfg; lsSet("shopmodeBtn", shopCfg); if (!shopCfg && shopOn) await endShopMode(); b.setAttribute("aria-checked", shopCfg ? "true" : "false"); applyShopBtn(); if (shopCfg) toast("Oben rechts ist jetzt der Knopf für den Einkaufsmodus."); }
     else if (m === "lang"){ openLang(); }
     else if (m === "prices"){ showPrices = !showPrices; lsSet("prices", showPrices); b.setAttribute("aria-checked", showPrices ? "true" : "false"); render(); }
   });
@@ -3381,6 +3439,7 @@ const TOUR_STEPS = [
   {sel:"#list", t:"<b>Automatisch sortiert</b>Die App erkennt die Kategorie und sortiert alles so, wie du durch den Markt läufst."},
   {sel:"#list ul.items li .tick", t:"<b>Abhaken</b>Antippen oder nach rechts wischen – der Artikel wandert in den Wagen. Nach links wischen löscht ihn.", demo:"tick"},
   {sel:".cart", t:"<b>Dein Laufweg</b>Beim Abhaken merkt sich die App, in welcher Reihenfolge du durch den Laden gehst. Am Ende bietet sie an, diese Reihenfolge für deinen Markt zu übernehmen – so wird die Liste jedes Mal passender."},
+  {sel:"#shopBtn", when:()=>shopCfg, demo:"shop", t:"<b>Einkaufsmodus</b>Im Laden oben auf den Wagen tippen: große Schrift, nur die offenen Artikel, das Display bleibt an. Beim Beenden fragt die App, ob sie deinen Weg übernehmen soll – auch wenn es mal etwas nicht gab."},
   {sel:"#list ul.items li .more", t:"<b>Menge und Notiz</b>Über ⋯ änderst du einen Artikel, z. B. Menge oder Notiz."},
   {sel:"#micBtn:not([hidden]), #scanBtn", all:true, t:"<b>Sprechen & Scannen</b>Mit dem Mikrofon diktierst du die Liste, daneben scannst du Barcodes."},
   {sel:"#storeChip:not([hidden]), #shopsChip:not([hidden])", t:"<b>Dein Markt</b>Wähle Art und Name deines Markts – die Sortierung passt sich an."},
@@ -3402,6 +3461,7 @@ let tourOn = false;
 function startTour(steps, opt){
   steps = steps || TOUR_STEPS; opt = opt || {};
   const main = steps === TOUR_STEPS;
+  steps = steps.filter(x=>!x.when || x.when());
   if (tourOn) return; tourOn = true;
   const snapItems = JSON.stringify(state.items), snapFreq = JSON.stringify(state.freq);
   if (main) syncHold = true;                       // Beispiel-Artikel nicht an andere schicken
@@ -3443,6 +3503,7 @@ function startTour(steps, opt){
   const show = async ()=>{
     busy = true;
     const st = steps[ix];
+    if (shopOn && st.demo !== "shop") await setShopMode(false, true);   // Vorführung des Einkaufsmodus beenden
     bringIntoView(target(st.sel, false));
     await wait(60);
 
@@ -3456,6 +3517,9 @@ function startTour(steps, opt){
       for (let i = 1; i <= txt.length && tourOn; i++){ inp.value = txt.slice(0, i); await wait(45); }
       await wait(450);
       if (tourOn){ inp.value = ""; addFromText(txt); inp.blur(); }
+    } else if (st.demo === "shop"){
+      await wait(800);
+      if (tourOn && !shopOn){ await setShopMode(true, true); await wait(80); place(target("#shopBtn, #shopBar, #list", true)); }
     } else if (st.demo === "tick"){
       await wait(900);
       const li = document.querySelector("#list ul.items li[data-id]");
@@ -3467,6 +3531,7 @@ function startTour(steps, opt){
   };
   const end = ()=>{
     tourOn = false; root.remove();
+    if (shopOn && main) setShopMode(false, true);
     window.removeEventListener("keydown", onKey, true);
     if (main){
       state.items = JSON.parse(snapItems); state.freq = JSON.parse(snapFreq);   // Beispiel-Artikel wieder weg
