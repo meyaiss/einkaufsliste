@@ -239,7 +239,7 @@ Die beiden Einträge lassen sich meist auch als eigenes Symbol auf den Home-Bild
 
 ## Updates
 
-Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v36";` hochzählen (v37, v38 …). Dann holen sich installierte Apps die neue Version.
+Nach Änderungen an `index.html` in `sw.js` die Zeile `const VERSION = "einkaufsliste-v37";` hochzählen (v38, v39 …). Dann holen sich installierte Apps die neue Version.
 
 Unter Menü → „Einstellungen“ → „Updates“ stellst du ein, wie das passiert:
 - **Auf Nachfrage (Standard):** Oben erscheint „Eine neue Version ist da“, und erst nach „Aktualisieren“ wird gewechselt. Mit ✕ blendest du den Hinweis bis zum nächsten Start aus, ohne zu aktualisieren. Aktualisieren geht dann jederzeit unter Einstellungen → Updates. Die bisherige Version bleibt auch dann, wenn du die App zwischendurch ganz schließt.

@@ -4,7 +4,7 @@
    - Updates: „Auf Nachfrage“ (Standard) behält die benutzte Version, bis du „Aktualisieren“ tippst –
      auch über einen Neustart der App hinweg. „Automatisch“ übernimmt neue Versionen sofort.
    Bei Änderungen an der App die Versionsnummer erhöhen, damit Handys die neue Version bekommen. */
-const VERSION = "einkaufsliste-v36";
+const VERSION = "einkaufsliste-v37";
 const INBOX = "einkaufszettel-inbox";
 const SETTINGS = "einkaufsliste-settings";   // hier legt die App die Update-Einstellung ab
 const SHELL = [

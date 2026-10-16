@@ -456,6 +456,8 @@ ul.items.flat{margin-top:14px}
 .route li.pin .nm small{display:block;font-size:calc(12px*var(--fs));color:var(--muted);font-weight:400}
 .route li.pin.flash{outline:3px solid var(--tag)}
 body.shopmode .cart{margin-top:18px}
+/* Zeilen außerhalb des Bildschirms nicht vorab aufbauen – macht Umschalten und Abhaken bei langen Listen flüssiger */
+#list ul.items > li{content-visibility:auto;contain-intrinsic-size:auto 56px}
 /* Einkaufsmodus: nur das Nötigste – keine Teilen-Infos, keine Summe, kein Update-Hinweis; Markt nur klein als Text */
 body.shopmode #syncBar, body.shopmode #sumLine, body.shopmode #updBar, body.shopmode #shareIco{display:none!important}
 body.shopmode .sub .store{border:0;background:none;padding:0;pointer-events:none;max-width:55%}
@@ -1164,7 +1166,15 @@ const api = {
 };
 
 /* ---------- Märkte ---------- */
+/* Die Marktliste wird nur neu aufgebaut, wenn sich etwas an deinen Märkten geändert hat (spart beim Abhaken und Umschalten viel Rechenzeit) */
+let storeMemo = {key:null, list:null};
 function storeList(){
+  const key = JSON.stringify(state.stores);
+  if (storeMemo.key === key) return storeMemo.list;
+  storeMemo = {key, list:buildStoreList()};
+  return storeMemo.list;
+}
+function buildStoreList(){
   const list = BUILTIN.map(b => {
     const o = state.stores[b.id];
     return {id:b.id, name:b.name, type:b.type, order:fixOrder(o && o.order ? o.order : b.order, b.type), builtin:true, edited:!!o, region:b.region};
@@ -1468,8 +1478,10 @@ function openTripReview(opt){
   opt = opt || {};
   let handoff = false, finished = false;
   const finish = ()=>{ if (finished) return; finished = true; render(); if (opt.after) opt.after(); };
+  let first = true;
   const draw = ()=>{
-    render();
+    if (!first) render();                 // beim ersten Öffnen ist die Liste schon aktuell
+    first = false;
     const ps = pendingTrips();
     if (!ps.length){ handoff = false; if (sheetCleanup) closeSheet(); else finish(); return; }
     handoff = true;
