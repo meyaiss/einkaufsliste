@@ -3,7 +3,7 @@
   "short_name": "Einkaufsliste",
   "description": "Einkaufsliste zum Abhaken – mit Barcode-Scanner, Spracheingabe und Teilen per WhatsApp.",
   "lang": "de",
-  "id": "./",
+  "id": "./einkaufsliste/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
